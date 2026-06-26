@@ -1,0 +1,82 @@
+"""
+学生画像 API
+"""
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from backend.api.deps import get_db, get_current_user
+from backend.database import calculate_profile, get_dimension_scores_history
+from backend.schemas.common import Response
+
+router = APIRouter(prefix="/api", tags=["学生画像"])
+
+
+@router.get("/profile/{username}", response_model=Response)
+async def get_profile(
+    username: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取学生能力画像"""
+    # 权限检查
+    if current_user["role"] != "teacher" and current_user["username"] != username:
+        raise HTTPException(status_code=403, detail="无权查看此画像")
+    
+    profile = calculate_profile(username)
+    history = get_dimension_scores_history(username)
+    
+    return Response(
+        data={
+            "username": username,
+            "display_name": current_user["display_name"] if current_user["username"] == username else None,
+            "dimensions": profile["dimensions"],
+            "overall_score": profile["overall"],
+            "missing_dimensions": profile["missing_dimensions"],
+            "history": history
+        }
+    )
+
+
+@router.get("/dimensions", response_model=Response)
+async def get_dimensions(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取评分维度配置"""
+    from backend.config import SCORING_DIMENSIONS, INDICATORS
+    
+    return Response(
+        data={
+            "dimensions": SCORING_DIMENSIONS,
+            "indicators": INDICATORS
+        }
+    )
+
+@router.get("/profile/{username}/submissions")
+async def get_student_submissions_history(
+    username: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取学生的所有提交记录（教师可用）"""
+    if current_user["role"] != "teacher" and current_user["username"] != username:
+        raise HTTPException(status_code=403, detail="无权查看")
+    
+    from backend.database import get_submissions_by_student
+    submissions = get_submissions_by_student(username)
+    
+    # 只返回必要字段
+    result = []
+    for sub in submissions:
+        result.append({
+            "id": sub["id"],
+            "task_title": sub.get("task_title"),
+            "submit_time": sub.get("submit_time"),
+            "submit_type": sub.get("submit_type"),
+            "is_reviewed": sub.get("is_reviewed"),
+            "weighted_total": sub.get("weighted_total"),
+            "scores": sub.get("scores", {})
+        })
+    
+    return Response(data=result)
