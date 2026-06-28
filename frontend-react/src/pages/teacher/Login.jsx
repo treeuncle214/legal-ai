@@ -12,16 +12,18 @@ export default function TeacherLogin({ onLoginSuccess }) {
         setLoading(true);
         try {
             const userData = await login(values.username, values.password);
-            console.log('登录返回数据:', userData);  // 添加日志
+            console.log('登录返回数据:', userData);
             if (userData.role !== 'teacher') {
                 message.error('请使用教师账号登录');
                 return;
             }
             message.success('登录成功');
-            onLoginSuccess(userData);  // 这会保存到 sessionStorage
+            onLoginSuccess(userData);
         } catch (err) {
             console.error('登录错误:', err);
-            message.error(err.message || '登录失败');
+            // ========== 修复：正确提取后端返回的错误信息 ==========
+            const errorMsg = err.response?.data?.detail || err.message || '登录失败，请检查网络';
+            message.error(errorMsg);
         } finally {
             setLoading(false);
         }

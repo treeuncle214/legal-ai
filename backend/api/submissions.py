@@ -17,14 +17,15 @@ from fastapi.responses import FileResponse
 import logging
 from docx import Document
 
-from backend.api.deps import get_db, get_current_user, get_current_student
+from backend.api.deps import get_db, get_current_user, get_current_student, get_student_class_id, get_teacher_class_ids
 from backend.database import (
     add_submission, update_scores, get_task, get_submissions_by_student
 )
 from backend.database.submissions import (
     can_submit, get_submission_count, get_submission, update_ai_score_status,
-    delete_submission  # 保留以备其他用途
+    delete_submission
 )
+from backend.database.tasks import get_task as get_task_db
 from backend.core.scorer import score_submission
 from backend.schemas.submission import TextSubmissionRequest
 from backend.schemas.common import Response as APIResponse
@@ -46,6 +47,7 @@ class TaskWrapper:
         self.enabled_indicators = data.get('enabled_indicators', '')
         self.max_submissions = data.get('max_submissions', 3)
         self.allow_after_deadline = data.get('allow_after_deadline', 0)
+        self.class_id = data.get('class_id')  # 新增
     
     def get_enabled_indicators_list(self) -> List[str]:
         if not self.enabled_indicators:
@@ -90,7 +92,6 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
         logger.info(f"提交 {submission_id} AI评分完成")
     except Exception as e:
         logger.error(f"提交 {submission_id} AI评分失败: {str(e)}", exc_info=True)
-        # 不再删除记录，改为标记失败，供教师手动处理
         update_ai_score_status(submission_id, "failed", error_message=str(e))
         update_scores(submission_id, {"ai_comment": "AI评分失败，请教师手动批改", "ai_score_status": "failed"})
 
@@ -106,10 +107,17 @@ async def submit_text(
         task_dict = get_task(submission_data.task_id)
         if not task_dict:
             raise HTTPException(status_code=404, detail="任务不存在")
+        
+        # 验证任务属于学生所在班级
+        student_class_id = get_student_class_id(current_user)
+        if task_dict.get("class_id") != student_class_id:
+            raise HTTPException(status_code=403, detail="无权提交此任务")
+        
         task_obj = TaskWrapper(task_dict)
         can_sub, check_message = can_submit(current_user["username"], submission_data.task_id, task_obj)
         if not can_sub:
             raise HTTPException(status_code=400, detail=check_message)
+        
         content = submission_data.final_output
         score_result = score_submission(task_dict, {"final_output": content, "submit_type": "text"})
         submission_id = add_submission(
@@ -191,6 +199,12 @@ async def submit_word(
     task_dict = get_task(task_id)
     if not task_dict:
         raise HTTPException(status_code=404, detail="任务不存在")
+    
+    # 验证任务属于学生所在班级
+    student_class_id = get_student_class_id(current_user)
+    if task_dict.get("class_id") != student_class_id:
+        raise HTTPException(status_code=403, detail="无权提交此任务")
+    
     task_obj = TaskWrapper(task_dict)
 
     # 检查提交次数
@@ -218,7 +232,7 @@ async def submit_word(
         process_log=process_log_text,
         final_output=final_output_text,
         submit_type="word",
-        word_file_path=f"{unique1},{unique2}",   # 两个文件名逗号分隔
+        word_file_path=f"{unique1},{unique2}",
         word_content=combined,
         ai_score_status="pending"
     )
@@ -240,7 +254,7 @@ async def submit_word(
     )
 
 
-# ========== 其余查询接口（保持原有功能） ==========
+# ========== 其余查询接口 ==========
 @router.get("/submissions/{submission_id}/score")
 async def get_submission_score(
     submission_id: int,
@@ -294,12 +308,27 @@ async def get_task_submissions(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    from backend.database import get_submissions_by_task
+    from backend.database import get_submissions_by_task_all
+    from backend.database.tasks import get_task as get_task_db
+    
+    task = get_task_db(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    
     if current_user["role"] == "teacher":
-        submissions = get_submissions_by_task(task_id)
+        # 教师：验证任务属于自己班级
+        teacher_class_ids = get_teacher_class_ids(current_user)
+        if task.get("class_id") not in teacher_class_ids:
+            raise HTTPException(status_code=403, detail="无权查看此任务")
+        submissions = get_submissions_by_task_all(task_id)
     else:
+        # 学生：只查看自己的提交，且任务属于自己班级
+        student_class_id = get_student_class_id(current_user)
+        if task.get("class_id") != student_class_id:
+            raise HTTPException(status_code=403, detail="无权查看此任务")
         submissions = get_submissions_by_student(current_user["username"])
         submissions = [s for s in submissions if s["task_id"] == task_id]
+    
     return APIResponse(data=submissions)
 
 
@@ -332,8 +361,18 @@ async def get_submission_detail(
     submission = get_submission(submission_id)
     if not submission:
         raise HTTPException(status_code=404, detail="提交记录不存在")
+    
+    # 权限检查
     if current_user["role"] != "teacher" and submission["student_username"] != current_user["username"]:
         raise HTTPException(status_code=403, detail="无权查看此提交")
+    
+    # 教师查看时验证提交属于自己班级
+    if current_user["role"] == "teacher":
+        task = get_task_db(submission.get("task_id"))
+        teacher_class_ids = get_teacher_class_ids(current_user)
+        if task and task.get("class_id") not in teacher_class_ids:
+            raise HTTPException(status_code=403, detail="无权查看此提交")
+    
     return APIResponse(data=submission)
 
 
@@ -346,8 +385,13 @@ async def get_remaining_submissions(
     task_dict = get_task(task_id)
     if not task_dict:
         raise HTTPException(status_code=404, detail="任务不存在")
+    
+    # 验证任务属于学生所在班级
+    student_class_id = get_student_class_id(current_user)
+    if task_dict.get("class_id") != student_class_id:
+        raise HTTPException(status_code=403, detail="无权查看此任务")
+    
     task_obj = TaskWrapper(task_dict)
-    # 使用新的统计函数（统计所有记录）
     from backend.database.submissions import get_submission_count
     submission_count = get_submission_count(current_user["username"], task_id)
     remaining = max(0, task_obj.max_submissions - submission_count)

@@ -36,6 +36,9 @@ class User(Base):
     display_name = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
+    # 关系：教师管理的班级
+    managed_classes = relationship("Class", back_populates="teacher", foreign_keys="Class.teacher_id")
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -44,6 +47,54 @@ class User(Base):
             "role": self.role,
             "display_name": self.display_name or self.username,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None
+        }
+
+
+class Class(Base):
+    """班级表"""
+    __tablename__ = "classes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    teacher_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    course_id = Column(Integer, nullable=True)  # 预留：未来课程扩展
+    created_at = Column(DateTime, default=datetime.now)
+
+    # 关系
+    teacher = relationship("User", back_populates="managed_classes", foreign_keys=[teacher_id])
+    students = relationship("UserClass", back_populates="class_ref")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "teacher_id": self.teacher_id,
+            "teacher_name": self.teacher.display_name if self.teacher else None,
+            "course_id": self.course_id,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
+            "student_count": len(self.students) if self.students else 0
+        }
+
+
+class UserClass(Base):
+    """学生-班级关联表"""
+    __tablename__ = "user_class"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    class_id = Column(Integer, ForeignKey("classes.id"), nullable=False)
+    joined_at = Column(DateTime, default=datetime.now)
+
+    # 关系
+    user = relationship("User")
+    class_ref = relationship("Class", back_populates="students")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "class_id": self.class_id,
+            "joined_at": self.joined_at.strftime("%Y-%m-%d %H:%M:%S") if self.joined_at else None
         }
 
 
@@ -63,6 +114,10 @@ class Task(Base):
     task_type = Column(String(20), default="任务实践")
     enabled_indicators = Column(String(500), default="")
     custom_prompt = Column(Text, nullable=True)
+    
+    # ========== 新增：班级关联 ==========
+    class_id = Column(Integer, ForeignKey("classes.id"), nullable=True)
+    course_id = Column(Integer, nullable=True)  # 预留：未来课程扩展
 
     def get_enabled_indicators_list(self):
         if not self.enabled_indicators:
@@ -89,7 +144,9 @@ class Task(Base):
             "is_active": self.is_active,
             "task_type": self.task_type,
             "enabled_indicators": self.enabled_indicators,
-            "custom_prompt": self.custom_prompt
+            "custom_prompt": self.custom_prompt,
+            "class_id": self.class_id,  # 新增
+            "course_id": self.course_id  # 新增
         }
 
 
@@ -120,8 +177,8 @@ class Submission(Base):
     reviewed_by = Column(String(100), nullable=True)
     reviewed_at = Column(DateTime, nullable=True)
     
-    # ========== 新增：成绩是否已对学生公布 ==========
-    score_published = Column(Integer, default=0)  # 0=未公布，1=已公布
+    # 成绩是否已对学生公布
+    score_published = Column(Integer, default=0)
     
     # 元数据
     submit_time = Column(DateTime, default=datetime.now)
@@ -131,7 +188,6 @@ class Submission(Base):
     task = relationship("Task", backref="submissions")
 
     def get_scores_dict(self):
-        """获取评分字典（优先使用final_score）"""
         result = {}
         for dim in SCORING_DIMENSIONS:
             key = dim["key"]
@@ -165,10 +221,6 @@ class Submission(Base):
         return round(total, 2)
 
     def to_dict(self, include_scores=True):
-        """
-        转换为字典
-        include_scores: 是否包含评分信息（学生端根据score_published控制）
-        """
         result = {
             "id": self.id,
             "task_id": self.task_id,
@@ -188,16 +240,14 @@ class Submission(Base):
             "submit_time": self.submit_time.strftime("%Y-%m-%d %H:%M:%S") if self.submit_time else None,
             "resubmit_count": self.resubmit_count,
             "task_title": self.task.title if self.task else None,
-            "score_published": self.score_published,  # 新增
+            "score_published": self.score_published,
         }
         
-        # 只有 include_scores=True 时才返回评分信息
         if include_scores:
             result["scores"] = self.get_scores_dict()
             result["levels"] = self.get_levels_dict()
             result["weighted_total"] = self.calculate_weighted_total()
             
-            # 保留原始动态字段
             for dim in SCORING_DIMENSIONS:
                 key = dim["key"]
                 result[f"score_{key}"] = getattr(self, f"score_{key}", None)

@@ -80,6 +80,15 @@ class ApiClient {
      * 发起请求
      */
     async request(url, options = {}) {
+        // 处理查询参数
+        let fullUrl = `${this.baseURL}${url}`;
+        if (options.params) {
+            const queryString = new URLSearchParams(options.params).toString();
+            if (queryString) {
+                fullUrl += (fullUrl.includes('?') ? '&' : '?') + queryString;
+            }
+            delete options.params;
+        }
         const token = this.getToken();
         const headers = {
             'Content-Type': 'application/json',
@@ -101,11 +110,16 @@ class ApiClient {
         }
 
         try {
-            const response = await fetch(`${this.baseURL}${url}`, config);
+            const response = await fetch(fullUrl, config);
             const data = await response.json();
 
-            // 处理未认证错误
+            // ========== 关键修复：登录接口不自动跳转 ==========
             if (response.status === 401 || data.code === 401) {
+                // 如果是登录或刷新接口，不要自动跳转，让调用方处理错误
+                if (url === '/api/login' || url === '/api/refresh') {
+                    throw new Error(data.detail || '认证失败');
+                }
+                // 其他接口 401 则清空 session 并跳转
                 sessionStorage.clear();
                 this.redirectToLogin();
                 throw new Error('登录已过期，请重新登录');

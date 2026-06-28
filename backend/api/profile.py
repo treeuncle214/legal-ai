@@ -1,3 +1,4 @@
+# backend/api/profile.py
 """
 学生画像 API
 """
@@ -5,8 +6,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from backend.api.deps import get_db, get_current_user
+from backend.api.deps import get_db, get_current_user, get_teacher_class_ids, get_student_class_id
 from backend.database import calculate_profile, get_dimension_scores_history
+from backend.database.tasks import get_task
 from backend.schemas.common import Response
 
 router = APIRouter(prefix="/api", tags=["学生画像"])
@@ -20,7 +22,26 @@ async def get_profile(
 ):
     """获取学生能力画像"""
     # 权限检查
-    if current_user["role"] != "teacher" and current_user["username"] != username:
+    if current_user["role"] == "teacher":
+        # 教师：验证该学生在自己班级
+        from backend.database.engine import get_db_connection
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT uc.class_id 
+                FROM user_class uc
+                JOIN users u ON u.id = uc.user_id
+                WHERE u.username = ?
+            """, (username,))
+            student_class_rows = cursor.fetchall()
+            student_class_ids = [row[0] for row in student_class_rows]
+            teacher_class_ids = get_teacher_class_ids(current_user)
+            if not any(cid in teacher_class_ids for cid in student_class_ids):
+                raise HTTPException(status_code=403, detail="无权查看该学生画像")
+        finally:
+            conn.close()
+    elif current_user["username"] != username:
         raise HTTPException(status_code=403, detail="无权查看此画像")
     
     profile = calculate_profile(username)
@@ -53,6 +74,7 @@ async def get_dimensions(
         }
     )
 
+
 @router.get("/profile/{username}/submissions")
 async def get_student_submissions_history(
     username: str,
@@ -60,7 +82,26 @@ async def get_student_submissions_history(
     db: Session = Depends(get_db)
 ):
     """获取学生的所有提交记录（教师可用）"""
-    if current_user["role"] != "teacher" and current_user["username"] != username:
+    if current_user["role"] == "teacher":
+        # 教师：验证该学生在自己班级
+        from backend.database.engine import get_db_connection
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT uc.class_id 
+                FROM user_class uc
+                JOIN users u ON u.id = uc.user_id
+                WHERE u.username = ?
+            """, (username,))
+            student_class_rows = cursor.fetchall()
+            student_class_ids = [row[0] for row in student_class_rows]
+            teacher_class_ids = get_teacher_class_ids(current_user)
+            if not any(cid in teacher_class_ids for cid in student_class_ids):
+                raise HTTPException(status_code=403, detail="无权查看该学生记录")
+        finally:
+            conn.close()
+    elif current_user["username"] != username:
         raise HTTPException(status_code=403, detail="无权查看")
     
     from backend.database import get_submissions_by_student

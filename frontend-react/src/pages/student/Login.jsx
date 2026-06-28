@@ -12,7 +12,6 @@ export default function StudentLogin({ onLoginSuccess }) {
         setLoading(true);
         try {
             const userData = await login(values.username, values.password);
-            // 现在 userData 直接就是用户数据
             if (userData.role !== 'student') {
                 message.error('请使用学生账号登录');
                 return;
@@ -20,7 +19,10 @@ export default function StudentLogin({ onLoginSuccess }) {
             message.success('登录成功');
             onLoginSuccess(userData);
         } catch (err) {
-            message.error(err.message || '登录失败');
+            console.error('登录错误:', err);
+            // ========== 修复：正确提取后端返回的错误信息 ==========
+            const errorMsg = err.response?.data?.detail || err.message || '登录失败，请检查网络';
+            message.error(errorMsg);
         } finally {
             setLoading(false);
         }

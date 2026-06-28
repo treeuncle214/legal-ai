@@ -118,6 +118,54 @@ export const exportStudentReport = (username) =>
 export const getDimensions = () =>
     api.get('/api/dimensions');
 
+// ==================== 班级管理接口 ====================
+
+/**
+ * 获取当前教师的所有班级
+ */
+export const getClasses = () =>
+    api.get('/api/classes');
+
+/**
+ * 创建班级
+ */
+export const createClass = (name) =>
+    api.post('/api/classes', null, { params: { name } });
+
+/**
+ * 获取班级学生列表
+ */
+export const getClassStudents = (classId) =>
+    api.get(`/api/classes/${classId}/students`);
+
+/**
+ * 向班级添加学生
+ */
+export const addStudentToClass = (classId, username) =>
+    api.post(`/api/classes/${classId}/students`, null, { params: { username } });
+
+/**
+ * 从班级移除学生
+ */
+export const removeStudentFromClass = (classId, username) =>
+    api.delete(`/api/classes/${classId}/students/${username}`);
+
+/**
+ * 删除班级
+ */
+export const deleteClass = (classId) =>
+    api.delete(`/api/classes/${classId}`);
+
+// ==================== 修改密码接口 ====================
+
+/**
+ * 修改当前用户密码
+ */
+export const changePassword = (oldPassword, newPassword) =>
+    api.put('/api/users/password', { old_password: oldPassword, new_password: newPassword });
+
+
+
 export { api };
 export default api;
 

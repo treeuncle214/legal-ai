@@ -1,10 +1,13 @@
+
+---
+
 # 法律信息智能检索 - AI能力测评系统
 
 ## 项目概述
 
 电子科技大学《法律信息智能检索》智慧课程建设项目配套系统。
 
-**核心功能**：学生提交法律检索实践任务 → AI自动评分（4维度14指标）→ 生成能力雷达图 → 教师审批并导出成绩。
+**核心功能**：学生提交法律检索实践任务 → AI自动评分（4维度14指标）→ 教师审批（可修改AI评分）→ 教师发布成绩 → 学生查看成绩总结 → 生成能力雷达图。
 
 ---
 
@@ -19,7 +22,7 @@
 | **数据库ORM** | SQLAlchemy 2.0 | 开发SQLite / 生产PostgreSQL |
 | **AI接口** | DeepSeek API | 兼容OpenAI格式，无Key时自动Mock |
 | **文档处理** | python-docx, openpyxl | Word读写、Excel导出 |
-| **部署** | Docker + Nginx | 一键部署 |
+| **部署** | Docker + Nginx | 容器化一键部署 |
 
 ---
 
@@ -30,45 +33,45 @@ LEGAL-AI-ASSESSMENT/
 ├── backend/                          # FastAPI 后端
 │   ├── api/                          # API 路由层
 │   │   ├── auth.py                   # 登录认证
-│   │   ├── users.py                  # 用户管理
+│   │   ├── users.py                  # 用户管理 + 班级管理
 │   │   ├── tasks.py                  # 任务管理
 │   │   ├── submissions.py            # 提交评分
-│   │   ├── review.py                 # 教师审批
+│   │   ├── review.py                 # 教师审批 + 批量发布
 │   │   ├── profile.py                # 能力画像
 │   │   ├── export.py                 # 数据导出
-│   │   ├── deps.py                   # 依赖注入
-│   │   └── __init__.py               # 路由注册
+│   │   ├── deps.py                   # 依赖注入（含权限函数）
+│   │   └── __init__.py
 │   ├── core/                         # 核心业务逻辑
 │   │   ├── auth.py                   # JWT认证、密码哈希
 │   │   └── scorer.py                 # AI评分引擎
 │   ├── database/                     # 数据库层
 │   │   ├── engine.py                 # 数据库连接
-│   │   ├── models.py                 # ORM模型（User, Task, Submission, Rubric）
+│   │   ├── models.py                 # ORM模型
 │   │   ├── migrations.py             # 数据库迁移
 │   │   ├── users.py                  # 用户CRUD
 │   │   ├── tasks.py                  # 任务CRUD
 │   │   ├── submissions.py            # 提交CRUD + 次数检查
+│   │   ├── classes.py                # 班级CRUD（新增）
 │   │   ├── profile.py                # 画像计算
-│   │   └── __init__.py               # 统一导出
+│   │   └── __init__.py
 │   ├── schemas/                      # Pydantic模型
-│   │   ├── common.py                 # 通用响应
-│   │   ├── user.py                   # 用户模型
-│   │   ├── task.py                   # 任务模型
-│   │   ├── submission.py             # 提交模型
-│   │   ├── profile.py                # 画像模型
+│   │   ├── common.py
+│   │   ├── user.py
+│   │   ├── task.py
+│   │   ├── submission.py
+│   │   ├── profile.py
 │   │   └── __init__.py
 │   ├── services/                     # 服务层
-│   │   ├── scoring_service.py        # 评分服务
-│   │   ├── export_service.py         # 导出服务
-│   │   ├── ai_client.py              # AI客户端服务
+│   │   ├── scoring_service.py
+│   │   ├── export_service.py
 │   │   └── __init__.py
 │   ├── utils/                        # 工具函数
-│   │   ├── cleanup.py                # 文件定时清理
-│   │   ├── file_handlers.py          # Word/PDF处理
-│   │   ├── helpers.py                # 通用辅助函数
+│   │   ├── cleanup.py
+│   │   ├── file_handlers.py
+│   │   ├── helpers.py
 │   │   └── __init__.py
-│   ├── config.py                     # 全局配置
-│   ├── main.py                       # FastAPI入口
+│   ├── config.py
+│   ├── main.py
 │   └── __init__.py
 │
 ├── frontend-react/                   # React 前端
@@ -77,22 +80,26 @@ LEGAL-AI-ASSESSMENT/
 │   │   │   ├── client.js             # API客户端（统一认证）
 │   │   │   └── index.js              # API函数封装
 │   │   ├── components/
-│   │   │   └── Layout.jsx            # 公共布局（侧边栏+顶栏）
+│   │   │   └── Layout.jsx            # 公共布局（含修改密码入口）
 │   │   ├── pages/
-│   │   │   ├── student/              # 学生端
-│   │   │   │   ├── Login.jsx         # 登录页
-│   │   │   │   ├── Tasks.jsx         # 任务列表
-│   │   │   │   ├── Submit.jsx        # 提交作业（文本/Word）
-│   │   │   │   ├── MySubmissions.jsx # 我的提交（历史记录）
-│   │   │   │   └── Profile.jsx       # 能力画像（雷达图）
-│   │   │   └── teacher/              # 教师端
-│   │   │       ├── Login.jsx         # 登录页
-│   │   │       ├── Tasks.jsx         # 任务管理（增删改查）
-│   │   │       ├── Review.jsx        # 审批评分（折叠面板）
-│   │   │       ├── Scores.jsx        # 成绩总览 + 导出
-│   │   │       └── StudentProfile.jsx # 学生画像查询
-│   │   ├── App.jsx                   # 路由配置
-│   │   └── main.jsx                  # 入口
+│   │   │   ├── student/              # 学生端（5页）
+│   │   │   │   ├── Login.jsx
+│   │   │   │   ├── Tasks.jsx
+│   │   │   │   ├── Submit.jsx        # 仅支持双Word文档提交
+│   │   │   │   ├── MySubmissions.jsx
+│   │   │   │   ├── Profile.jsx
+│   │   │   │   └── ScoreSummary.jsx  # 成绩总结（新增）
+│   │   │   ├── teacher/              # 教师端（7页）
+│   │   │   │   ├── Login.jsx
+│   │   │   │   ├── Tasks.jsx         # 发布任务时选择班级
+│   │   │   │   ├── ClassManagement.jsx  # 班级管理（新增）
+│   │   │   │   ├── ClassDetail.jsx   # 班级详情（新增）
+│   │   │   │   ├── Review.jsx        # 审批评分 + 批量发布
+│   │   │   │   ├── Scores.jsx
+│   │   │   │   └── StudentProfile.jsx
+│   │   │   └── ChangePassword.jsx    # 修改密码（新增，独立页面）
+│   │   ├── App.jsx
+│   │   └── main.jsx
 │   ├── index.html
 │   ├── package.json
 │   └── vite.config.js
@@ -101,22 +108,20 @@ LEGAL-AI-ASSESSMENT/
 │   ├── assessment.db                 # SQLite数据库
 │   ├── uploads/                      # 上传的Word文档
 │   ├── exports/                      # 导出的Excel/Word报告
-│   └── temp/                         # 临时文件
+│   └── temp/
 │
 ├── docs/
 ├── logs/
-├── node_modules/
-├── temp/
-├── tests/
-├── .env                              # 环境变量（API Key、配置）
+├── .env                              # 环境变量
 ├── .gitignore
-├── docker-compose.yml
-├── nginx.conf
+├── docker-compose.yml                # Docker编排
+├── nginx.conf                        # Nginx反向代理配置
 ├── README.md
-├── requirements.txt                  # Python依赖
+├── requirements.txt
 ├── test_ai_score.py
 ├── test_real_api.py
-└── try.py
+├── try.py
+└── migrate_classes.py                # 班级表迁移脚本
 ```
 
 ---
@@ -130,9 +135,27 @@ LEGAL-AI-ASSESSMENT/
 |------|------|------|
 | id | INTEGER | 主键 |
 | username | VARCHAR(100) | 唯一，学号/工号 |
-| password | VARCHAR(255) | 哈希存储（bcrypt或SHA256） |
+| password | VARCHAR(255) | 哈希存储（bcrypt） |
 | role | VARCHAR(20) | student/teacher |
 | display_name | VARCHAR(100) | 显示名称 |
+
+#### `classes` 表（新增）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER | 主键 |
+| name | VARCHAR(100) | 班级名称 |
+| teacher_id | INTEGER | 负责教师 user_id |
+| course_id | INTEGER | 预留：未来课程扩展 |
+| created_at | DATETIME | 创建时间 |
+
+#### `user_class` 表（新增）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER | 主键 |
+| user_id | INTEGER | 学生 user_id |
+| class_id | INTEGER | 班级 id |
+| joined_at | DATETIME | 加入时间 |
+| UNIQUE(user_id, class_id) | | 防止重复关联 |
 
 #### `tasks` 表
 | 字段 | 类型 | 说明 |
@@ -142,11 +165,14 @@ LEGAL-AI-ASSESSMENT/
 | description | TEXT | 任务描述 |
 | due_date | VARCHAR(50) | 截止时间 |
 | task_type | VARCHAR(20) | 课堂练习/任务实践/期末考察 |
-| enabled_indicators | VARCHAR(500) | 启用的二级指标，逗号分隔 |
+| enabled_indicators | VARCHAR(500) | 启用的二级指标 |
 | max_submissions | INTEGER | 最大提交次数，默认3 |
-| allow_after_deadline | INTEGER | 是否允许截止后提交，默认0 |
+| allow_after_deadline | INTEGER | 是否允许截止后提交 |
+| custom_prompt | TEXT | 教师自定义AI评分提示词 |
+| **class_id** | INTEGER | **新增：所属班级（外键→classes）** |
+| course_id | INTEGER | 预留：未来课程扩展 |
 
-#### `submissions` 表（核心字段）
+#### `submissions` 表
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | INTEGER | 主键 |
@@ -155,8 +181,8 @@ LEGAL-AI-ASSESSMENT/
 | process_log | TEXT | 检索过程记录 |
 | ai_interaction_log | TEXT | AI交互记录 |
 | final_output | TEXT | 最终结果 |
-| word_file_path | VARCHAR(500) | Word文件名 |
-| submit_type | VARCHAR(20) | text/word |
+| word_file_path | VARCHAR(500) | Word文件名（支持逗号分隔多个） |
+| submit_type | VARCHAR(20) | text/word（当前仅word） |
 | score_ai_retrieval | FLOAT | AI融合智能检索能力分 |
 | score_critical | FLOAT | 批判性评估能力分 |
 | score_ethics | FLOAT | 伦理合规辨识能力分 |
@@ -165,9 +191,8 @@ LEGAL-AI-ASSESSMENT/
 | ai_score_status | VARCHAR(20) | pending/scoring/completed/failed |
 | is_reviewed | INTEGER | 是否已审批（0/1） |
 | teacher_comment | TEXT | 教师评语 |
+| **score_published** | INTEGER | **新增：成绩是否已公布（0/1）** |
 | submit_time | DATETIME | 提交时间 |
-
-> **注意**：`is_reviewed` 和 `ai_score_status` 必须在插入时设置默认值（0 和 'pending'），否则教师端无法获取待审批记录。
 
 ---
 
@@ -181,42 +206,128 @@ LEGAL-AI-ASSESSMENT/
 | integration | 信息整合应用能力 | 30% | D1,D2,D3,D4 |
 
 **评分流程**：
-- 平时练习：AI对14个指标评A/B/C/D等级 → 等级转分数 → 聚合为4维度分数（缺失指标不参与计算，避免强行拉低分数）
+- 平时练习：AI对14个指标评A/B/C/D等级 → 等级转分数 → 聚合为4维度分数（缺失指标不参与计算）
 - 期末报告：AI按8个模块评分（0-100）→ 映射到4维度
 - 支持Mock模式（无API Key时自动启用）和真实DeepSeek API模式
 
 ---
 
-## API接口清单（28个）
+## 角色与权限体系
 
+### 三种身份及其权限
+
+| 身份 | 登录界面 | 看到的班级 | 看到的用户 | 能发布任务 | 能审批 | 能管理用户 |
+|------|----------|------------|------------|------------|--------|------------|
+| **admin（管理员）** | 教师端 | **所有班级** | **所有用户** | ✅ 所有班级 | ✅ 所有班级 | ✅ 全部 |
+| **普通教师** | 教师端 | 自己的班级 | 自己的学生 | ✅ 自己的班级 | ✅ 自己的班级 | ❌ |
+| **学生** | 学生端 | 自己的班级 | 自己 | ❌ | ❌ | ❌ |
+
+### 数据隔离规则
+- **学生端**：只能看到自己班级的任务，只能提交自己班级的任务
+- **教师端**：只能看到自己负责班级的数据（任务、提交、学生）
+- **admin**：绕过所有班级过滤，看到全部数据
+- **判断逻辑**：后端通过 `current_user["username"] == "admin"` 识别管理员
+
+---
+
+## API接口清单
+
+### 认证与用户管理
 | 方法 | 路径 | 说明 | 权限 |
 |------|------|------|------|
 | POST | `/api/login` | 登录 | 公开 |
 | POST | `/api/refresh` | 刷新Token | 公开 |
-| GET | `/api/users` | 获取用户列表 | 教师 |
-| POST | `/api/users` | 添加用户 | 教师 |
-| POST | `/api/users/batch` | 批量导入 | 教师 |
-| DELETE | `/api/users/{username}` | 删除用户 | 教师 |
-| GET | `/api/tasks` | 获取任务列表 | 学生/教师 |
+| GET | `/api/users` | 获取用户列表 | admin/教师 |
+| POST | `/api/users` | 添加用户 | admin/教师 |
+| DELETE | `/api/users/{username}` | 删除用户 | admin/教师 |
+| PUT | `/api/users/password` | 修改密码 | 已登录用户 |
+
+### 班级管理（新增）
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| GET | `/api/classes` | 获取教师班级列表 | 教师 |
+| POST | `/api/classes` | 创建班级 | 教师 |
+| GET | `/api/classes/{id}/students` | 获取班级学生列表 | 教师 |
+| POST | `/api/classes/{id}/students` | 向班级添加学生 | 教师 |
+| DELETE | `/api/classes/{id}/students/{username}` | 从班级移除学生 | 教师 |
+| DELETE | `/api/classes/{id}` | 删除班级 | 教师 |
+
+### 任务管理
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| GET | `/api/tasks` | 获取任务列表（班级过滤） | 学生/教师 |
 | GET | `/api/tasks/{id}` | 获取任务详情 | 学生/教师 |
-| POST | `/api/tasks` | 创建任务 | 教师 |
+| POST | `/api/tasks` | 创建任务（需选班级） | 教师 |
 | PUT | `/api/tasks/{id}` | 更新任务 | 教师 |
 | DELETE | `/api/tasks/{id}` | 删除任务 | 教师 |
-| POST | `/api/submissions/text` | 文本提交+AI评分 | 学生 |
-| POST | `/api/submissions/word` | Word上传+AI评分 | 学生 |
+
+### 提交与评分
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| POST | `/api/submissions/word` | Word双文件提交 | 学生 |
 | GET | `/api/submissions/student/{username}` | 学生提交记录 | 学生/教师 |
 | GET | `/api/submissions/task/{id}` | 任务提交列表 | 学生/教师 |
 | GET | `/api/submissions/{id}` | 提交详情 | 学生/教师 |
 | GET | `/api/submissions/remaining/{task_id}` | 剩余提交次数 | 学生 |
-| POST | `/api/review/{id}` | 教师审批评分 | 教师 |
-| GET | `/api/review/pending` | 待审批列表 | 教师 |
+| GET | `/api/submissions/published` | 已发布成绩（成绩总结） | 学生 |
+| GET | `/api/download/{filename}` | 下载Word文件 | 学生/教师 |
+
+### 审批与成绩发布
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| POST | `/api/review/{id}` | 教师审批（修改评分） | 教师 |
+| GET | `/api/review/pending` | 待审批列表（班级过滤） | 教师 |
+| GET | `/api/review/task/{task_id}` | 任务下所有提交（最新提交） | 教师 |
+| POST | `/api/review/publish/{submission_id}` | 单条发布成绩 | 教师 |
+| POST | `/api/review/publish_batch` | 批量发布成绩 | 教师 |
+
+### 画像与导出
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
 | GET | `/api/profile/{username}` | 学生能力画像 | 学生/教师 |
-| GET | `/api/profile/{username}/submissions` | 学生历史提交 | 学生/教师 |
 | GET | `/api/dimensions` | 维度配置 | 学生/教师 |
 | GET | `/api/export/scores` | 导出成绩Excel | 教师 |
 | GET | `/api/export/student_report/{username}` | 导出Word报告 | 教师 |
-| GET | `/api/download/{filename}` | 下载Word文件 | 学生/教师 |
 | GET | `/api/health` | 健康检查 | 公开 |
+
+---
+
+## 核心功能说明
+
+### 1. 班级隔离
+- 教师创建班级 → 班级绑定教师
+- 学生通过班级管理加入班级
+- 教师发布任务时必须选择所属班级
+- 学生只能看到自己班级的任务
+- 教师只能看到自己班级的学生和提交
+
+### 2. 提交方式（学生端）
+- **仅支持 Word 文档提交**（文本框已移除）
+- 需同时上传两个 `.docx` 文件：
+  - **文件1**：检索过程记录
+  - **文件2**：最终检索结果
+- 提交后不立即显示评分，显示“提交成功，等待教师批改”
+
+### 3. AI评分引擎
+- **Mock模式**：未配置API Key时自动启用
+- **真实模式**：配置`DEEPSEEK_API_KEY`后调用DeepSeek API
+- **容错机制**：AI评分失败时记录标记为`failed`，保留记录，教师可手动批改
+
+### 4. 成绩发布流程
+```
+学生提交 → AI评分 → 教师审批（可修改分数和评语）→ 教师发布成绩 → 学生端“成绩总结”页面可见
+```
+- 支持**单条发布**和**批量发布**（一键发布某任务下所有已审批成绩）
+- 教师端“审批评分”页面显示：待批改 / 已批改未发布 / 已发布
+
+### 5. 能力画像
+- **计算规则**：取学生所有历史提交中各维度的**最高分**
+- **雷达图**：使用ECharts展示四个维度得分
+- **数据统计**：显示总提交次数、各维度得分
+
+### 6. 修改密码
+- 教师端和学生端 Layout 中统一提供“修改密码”入口
+- 独立页面 `/change-password`，要求输入旧密码和新密码
 
 ---
 
@@ -255,33 +366,6 @@ npm run dev
 
 ---
 
-## 核心功能说明
-
-### AI评分引擎
-- **Mock模式**：未配置有效API Key时自动启用，随机生成合理分数（用于演示/测试）
-- **真实模式**：在`.env`中配置`DEEPSEEK_API_KEY`后调用DeepSeek API
-- **平时练习**：AI对14个二级指标给出A/B/C/D等级 → 聚合为4维度分数（缺失指标不计入）
-- **期末报告**：AI按8个模块分别打0-100分 → 映射到4维度
-
-### 提交限制
-- 每个任务最多提交次数由教师创建时设定（默认3）
-- 超过截止时间自动禁止提交（除非勾选“允许截止后提交”）
-- 学生端实时显示剩余次数（基于`ai_score_status='completed'`的有效提交）
-
-### 文件存储
-- Word文档保存在`data/uploads/`目录
-- 自动清理超过30天的旧文件（可在`.env`中调整）
-- 教师端支持下载/查看原始Word文档
-
-### 能力画像
-- **计算规则**：取学生所有历史提交中各维度的**最高分**（不区分练习/期末）
-- **雷达图**：使用ECharts展示四个维度得分
-- **数据统计**：显示总提交次数、各维度最高分
-
-> **注意**：若需改为“加权平均”或“最后一次分数”，请修改`backend/database/profile.py`中的`calculate_profile`函数。
-
----
-
 ## 环境变量配置（.env）
 
 ```bash
@@ -298,7 +382,7 @@ MAX_FILE_SIZE_MB=10
 FILE_RETENTION_DAYS=30
 MAX_STORAGE_MB=500
 
-# 数据库（开发用SQLite）
+# 数据库（开发用SQLite，生产用PostgreSQL）
 DATABASE_URL=sqlite:///./data/assessment.db
 
 # JWT密钥（生产环境必须修改）
@@ -311,39 +395,86 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:8000
 
 ---
 
+## 部署说明
+
+### 开发环境
+1. 克隆代码
+2. 配置`.env`文件
+3. 执行数据库迁移（已包含班级表）：`python migrate_classes.py`
+4. 启动后端和前端
+
+### 生产环境（Docker + Nginx + PostgreSQL）
+
+**推荐操作系统**：Ubuntu 22.04 LTS
+
+**硬件建议**：4核CPU / 8GB内存 / 80GB SSD / 5Mbps带宽
+
+**部署步骤**：
+```bash
+# 1. 服务器上安装 Docker
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+
+# 2. 安装 Docker Compose
+sudo apt install docker-compose-plugin
+
+# 3. 上传项目代码
+git clone <your-repo> /opt/legal-ai-assessment
+cd /opt/legal-ai-assessment
+
+# 4. 修改 .env 生产环境配置（切换PostgreSQL）
+vim .env
+
+# 5. 一键启动
+docker-compose up -d
+```
+
+**切换到PostgreSQL**：
+```bash
+# .env 中修改
+DATABASE_URL=postgresql://user:password@localhost:5432/legal_ai
+```
+
+---
+
 ## 扩展指南
 
 | 扩展点 | 操作位置 | 说明 |
 |--------|----------|------|
-| 增减评分维度 | `backend/config.py` → `SCORING_DIMENSIONS` | 数据库列自动添加，前端雷达图自动适配 |
+| 增减评分维度 | `backend/config.py` → `SCORING_DIMENSIONS` | 数据库列自动适配，雷达图自动更新 |
 | 修改评分标准 | `backend/core/scorer.py` → `INDICATOR_RUBRIC` | 修改A/B/C/D等级描述 |
 | 切换数据库 | 修改`.env`中的`DATABASE_URL` | 支持SQLite/PostgreSQL |
 | 调整提交次数 | 教师端创建任务时设置`max_submissions` | 默认3次 |
 | 修改文件保留天数 | `.env` → `FILE_RETENTION_DAYS` | 默认30天 |
+| 新增班级 | 教师端“班级管理”页面创建 | 需教师账号 |
 
 ---
 
 ## 常见问题排查
 
 ### 1. 教师端“待审批”列表为空
-- **原因**：`submissions`表中的`is_reviewed`字段为`NULL`或`1`。
-- **解决**：执行SQL `UPDATE submissions SET is_reviewed = 0 WHERE is_reviewed IS NULL;`，并确保`add_submission`函数插入时设置`is_reviewed=0`。
+- **原因**：`submissions`表中的`is_reviewed`字段为`NULL`或`1`
+- **解决**：执行`UPDATE submissions SET is_reviewed = 0 WHERE is_reviewed IS NULL;`，确保`add_submission`设置`is_reviewed=0`
 
-### 2. 学生端“我的提交”无数据
-- **原因**：前端未正确解析API响应（后端返回`{code, data}`，前端直接当数组使用）。
-- **解决**：修改`MySubmissions.jsx`中的`fetchSubmissions`，兼容`response.data`结构。
+### 2. 学生端看不到任务
+- **原因**：学生未分配到班级，或任务不属于学生所在班级
+- **解决**：在教师端“班级管理”中将学生加入班级，发布任务时选择对应班级
 
-### 3. AI评分全部为60分
-- **原因**：测试内容质量低（AI给出了C/D等级），且评分函数对缺失指标默认给60分。
-- **解决**：使用高质量提交内容；修改`calculate_dimension_scores`使缺失指标不参与计算（见`scorer.py`最新版本）。
+### 3. 教师端看不到学生提交
+- **原因**：任务不属于该教师负责的班级
+- **解决**：确认任务所属班级，且教师是该班级的负责人
 
-### 4. 个人画像分数不是最高分
-- **原因**：原画像函数计算平均分。
-- **解决**：已修改`profile.py`中的`calculate_profile`为取`MAX(score_xxx)`。
+### 4. AI评分全部为60分
+- **原因**：测试内容质量低，或Mock模式未启用
+- **解决**：使用高质量提交内容；检查DeepSeek API配置
 
-### 5. 提交后剩余次数未减少
-- **原因**：`get_submission_count`只统计`ai_score_status='completed'`的记录，而AI评分失败时记录被删除，导致计数不变。
-- **解决**：当前逻辑正确（失败不计次数），若需调整请修改`submissions.py`中的`get_submission_count`。
+### 5. 修改密码跳转异常
+- **原因**：路由嵌套问题
+- **解决**：确认`/change-password`位于App.jsx顶层路由，不在Layout内部
+
+### 6. 创建班级报422错误
+- **原因**：前端请求参数未正确传递
+- **解决**：后端从查询参数获取`name`，前端传递`params: { name }`
 
 ---
 
@@ -351,42 +482,28 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:8000
 
 | 模块 | 状态 | 备注 |
 |------|------|------|
-| 后端API（完整） | ✅ 已完成 | 包括认证、任务、提交、审批、导出 |
-| 前端页面（10页） | ✅ 已完成 | 学生端5页 + 教师端5页 |
-| 数据库模型 | ✅ 已完成 | 包含所有必要字段和动态评分列 |
-| AI评分引擎 | ✅ 已完成 | 支持Mock和真实DeepSeek API |
-| 提交次数限制 | ✅ 已完成 | 基于`ai_score_status='completed'` |
-| 截止时间检查 | ✅ 已完成 | 支持硬截止和允许补交 |
-| 文件上传与清理 | ✅ 已完成 | 自动清理30天前文件 |
-| 能力画像（最高分） | ✅ 已完成 | 改为历史最高分 |
+| 后端API | ✅ 已完成 | 含班级管理、批量发布、修改密码 |
+| 前端页面 | ✅ 已完成 | 学生端6页 + 教师端7页 |
+| 数据库模型 | ✅ 已完成 | 含classes、user_class表 |
+| 班级隔离 | ✅ 已完成 | 完整的班级数据隔离 |
+| AI评分引擎 | ✅ 已完成 | 支持Mock和DeepSeek API |
+| 成绩发布流程 | ✅ 已完成 | 单条发布 + 批量发布 |
+| 提交方式 | ✅ 已完成 | 仅支持双Word文档提交 |
+| 能力画像 | ✅ 已完成 | 取历史最高分 |
 | Excel/Word导出 | ✅ 已完成 | 成绩汇总、个人报告 |
-| 历史提交记录 | ✅ 已完成 | 学生端和教师端均可查看 |
+| 修改密码 | ✅ 已完成 | 统一入口 |
+| 管理员权限 | ✅ 已完成 | admin账号全量权限 |
 
 ## 待完成项
 
 | 任务 | 优先级 | 说明 |
 |------|--------|------|
 | 配置真实DeepSeek API Key | 高 | 在`.env`中填写，系统将自动切换至真实评分 |
-| 细化评分标准描述 | 中 | 等待老师提供14个指标A/B/C/D的具体文字描述（用于提示词） |
-| 服务器部署（Docker+Nginx） | 中 | 生产环境部署 |
+| 批量导入学生 | 中 | CSV/Excel批量导入学生账号到班级 |
+| 细化AI评分标准描述 | 中 | 等待老师提供14个指标A/B/C/D的具体描述 |
+| 生产环境部署 | 中 | Docker + Nginx + PostgreSQL |
 | 压力测试 | 低 | 模拟多人并发提交 |
 | 单元测试 | 低 | 补充后端核心函数测试用例 |
-
----
-
-## 建议修改的代码文件（基于当前问题）
-
-以下文件需要根据前述修复进行调整，以确保系统稳定运行：
-
-| 文件路径 | 修改内容 |
-|----------|----------|
-| `backend/database/submissions.py` | `add_submission`函数添加`is_reviewed=0`参数并在INSERT中包含该字段 |
-| `backend/core/scorer.py` | `calculate_dimension_scores`改为缺失指标不参与计算（避免默认60分） |
-| `backend/database/profile.py` | `calculate_profile`改为取各维度最高分（`MAX(score_xxx)`） |
-| `frontend-react/src/pages/teacher/Review.jsx` | `fetchData`中兼容`response.data`结构 |
-| `frontend-react/src/pages/student/MySubmissions.jsx` | `fetchSubmissions`中兼容`response.data`结构 |
-| `frontend-react/src/pages/student/Submit.jsx` | 添加任务详情加载逻辑（已在早期修复） |
-| `backend/api/submissions.py` | 确保调用`add_submission`时不传递`is_reviewed`（使用默认0） |
 
 ---
 
@@ -394,9 +511,9 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:8000
 
 - **课程负责人**：张玲玲（电子科技大学图书馆）
 - **开发**：学生独立全栈开发
-- **技术栈**：FastAPI + React + SQLAlchemy + ECharts + DeepSeek API
+- **技术栈**：FastAPI + React 19 + SQLAlchemy + ECharts + DeepSeek API + Docker
 
 ---
 
-**文档生成时间**：2026年6月9日  
-**项目版本**：v2.0.1（修复版）
+**文档生成时间**：2026年6月28日
+**项目版本**：v2.0.2（班级隔离版）

@@ -8,7 +8,7 @@ from pydantic import BaseModel, validator
 import logging
 import json
 
-from backend.api.deps import get_db, get_current_teacher
+from backend.api.deps import get_db, get_current_teacher, get_teacher_class_ids
 from backend.database import review_submission, get_submission
 from backend.database.models import Submission
 from backend.database.submissions import publish_submission_score
@@ -31,8 +31,8 @@ class PublishBatchRequest(BaseModel):
             raise ValueError('task_id 必须为正整数')
         return v
 
-# ==================== 批量发布接口（放在前面，避免路径冲突） ====================
 
+# ==================== 批量发布接口 ====================
 @router.post("/review/publish_batch", response_model=Response)
 async def publish_batch_scores(
     request: Request,
@@ -41,14 +41,12 @@ async def publish_batch_scores(
 ):
     """批量发布某任务下所有已批改且未发布的成绩"""
     body = await request.body()
-    print("原始请求体:", body)
     if not body:
         raise HTTPException(status_code=400, detail="请求体为空")
 
     try:
         data = json.loads(body)
     except json.JSONDecodeError as e:
-        print("JSON解析失败:", e)
         raise HTTPException(status_code=400, detail="无效的JSON格式")
 
     task_id = data.get("task_id")
@@ -56,6 +54,15 @@ async def publish_batch_scores(
         raise HTTPException(status_code=400, detail="缺少 task_id")
     if not isinstance(task_id, int) or task_id <= 0:
         raise HTTPException(status_code=400, detail="task_id 必须为正整数")
+    
+    # 验证任务属于当前教师
+    from backend.database.tasks import get_task
+    task = get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    teacher_class_ids = get_teacher_class_ids(current_user)
+    if task.get("class_id") not in teacher_class_ids:
+        raise HTTPException(status_code=403, detail="无权操作此任务")
 
     from backend.database.engine import get_db_connection
     conn = get_db_connection()
@@ -90,6 +97,13 @@ async def review_submission_api(
     if not submission:
         raise HTTPException(status_code=404, detail="提交记录不存在")
     
+    # 验证提交对应的任务属于当前教师
+    from backend.database.tasks import get_task
+    task = get_task(submission.get("task_id"))
+    teacher_class_ids = get_teacher_class_ids(current_user)
+    if task and task.get("class_id") not in teacher_class_ids:
+        raise HTTPException(status_code=403, detail="无权审批此提交")
+    
     review_submission(
         submission_id=submission_id,
         teacher_username=current_user["username"],
@@ -113,6 +127,13 @@ async def publish_score(
     if not submission:
         raise HTTPException(status_code=404, detail="提交记录不存在")
     
+    # 验证提交对应的任务属于当前教师
+    from backend.database.tasks import get_task
+    task = get_task(submission.get("task_id"))
+    teacher_class_ids = get_teacher_class_ids(current_user)
+    if task and task.get("class_id") not in teacher_class_ids:
+        raise HTTPException(status_code=403, detail="无权发布此成绩")
+    
     if submission.get("is_reviewed") != 1:
         raise HTTPException(status_code=400, detail="请先完成审批再发布成绩")
     
@@ -130,47 +151,69 @@ async def publish_score(
 async def get_pending_reviews(
     current_user: dict = Depends(get_current_teacher),
 ):
-    """获取所有待审批的提交（含发布状态）"""
-    from backend.database import SessionLocal
-    from backend.database.models import Submission
+    """获取所有待审批的提交（仅当前教师班级）"""
+    from backend.database.engine import get_db_connection
+    from backend.database.tasks import get_task
     from backend.config import SCORING_DIMENSIONS
     
-    db = SessionLocal()
+    teacher_class_ids = get_teacher_class_ids(current_user)
+    if not teacher_class_ids:
+        return Response(data=[])
+    
+    conn = get_db_connection()
     try:
-        pending_submissions = db.query(Submission).filter(
-            Submission.is_reviewed == 0
-        ).order_by(Submission.submit_time.desc()).all()
+        cursor = conn.cursor()
+        # 查询每个学生每个任务的最新提交，且 is_reviewed = 0，且任务属于教师班级
+        cursor.execute("""
+            SELECT s.*, t.title as task_title
+            FROM submissions s
+            JOIN tasks t ON s.task_id = t.id
+            WHERE s.id IN (
+                SELECT MAX(id) 
+                FROM submissions 
+                WHERE is_reviewed = 0
+                GROUP BY student_username, task_id
+            )
+            AND t.class_id IN ({})
+            ORDER BY s.submit_time DESC
+        """.format(','.join('?' * len(teacher_class_ids))), teacher_class_ids)
+        
+        rows = cursor.fetchall()
+        columns = [description[0] for description in cursor.description]
         
         result = []
-        for sub in pending_submissions:
-            task = sub.task
+        for row in rows:
+            sub = dict(zip(columns, row))
             scores_dict = {}
             for dim in SCORING_DIMENSIONS:
                 key = dim["key"]
-                scores_dict[key] = getattr(sub, f"score_{key}", 0)
+                scores_dict[key] = sub.get(f"score_{key}", 0)
             
             result.append({
-                "id": sub.id,
-                "student_username": sub.student_username,
-                "task_id": sub.task_id,
-                "task_title": task.title if task else "未知任务",
-                "submit_time": sub.submit_time.isoformat() if sub.submit_time else None,
-                "is_reviewed": sub.is_reviewed,
-                "score_published": sub.score_published or 0,
-                "ai_comment": sub.ai_comment,
-                "process_log": sub.process_log or "",
-                "ai_interaction_log": sub.ai_interaction_log or "",
-                "final_output": sub.final_output or "",
-                "word_content": sub.word_content or "",
-                "word_file_path": sub.word_file_path or "",
-                "tools_used": sub.tools_used or "",
-                "submit_type": sub.submit_type or "text",
+                "id": sub["id"],
+                "student_username": sub["student_username"],
+                "task_id": sub["task_id"],
+                "task_title": sub["task_title"],
+                "submit_time": sub["submit_time"],
+                "is_reviewed": sub["is_reviewed"],
+                "score_published": sub.get("score_published", 0),
+                "ai_comment": sub.get("ai_comment"),
+                "process_log": sub.get("process_log", ""),
+                "ai_interaction_log": sub.get("ai_interaction_log", ""),
+                "final_output": sub.get("final_output", ""),
+                "word_content": sub.get("word_content", ""),
+                "word_file_path": sub.get("word_file_path", ""),
+                "tools_used": sub.get("tools_used", ""),
+                "submit_type": sub.get("submit_type", "text"),
                 "scores": scores_dict,
             })
         
         return Response(data=result)
+    except Exception as e:
+        logger.error(f"获取待审批提交失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
-        db.close()
+        conn.close()
 
 
 # ==================== 按任务查看提交 ====================
@@ -181,7 +224,17 @@ async def get_task_reviews(
     current_user: dict = Depends(get_current_teacher),
     db: Session = Depends(get_db)
 ):
-    """获取某任务下所有学生的提交记录（含已审和待审）"""
+    """获取某任务下所有学生的提交记录（仅最新提交）"""
     from backend.database import get_submissions_by_task
+    from backend.database.tasks import get_task
+    
+    # 验证任务属于当前教师
+    task = get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    teacher_class_ids = get_teacher_class_ids(current_user)
+    if task.get("class_id") not in teacher_class_ids:
+        raise HTTPException(status_code=403, detail="无权查看此任务")
+    
     submissions = get_submissions_by_task(task_id)
     return Response(data=submissions)

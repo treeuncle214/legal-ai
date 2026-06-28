@@ -15,6 +15,7 @@ class TaskCreate(BaseModel):
     task_type: str = "任务实践"  # 课堂练习/任务实践/期末考察
     enabled_indicators: str = ""  # 逗号分隔的二级指标
     custom_prompt: Optional[str] = None  # 自定义AI评分提示词
+    class_id: int  # 新增：所属班级ID（必填）
 
 
 class TaskUpdate(BaseModel):
@@ -25,7 +26,8 @@ class TaskUpdate(BaseModel):
     is_active: Optional[int] = None
     task_type: Optional[str] = None
     enabled_indicators: Optional[str] = None
-    custom_prompt: Optional[str] = None  # 自定义AI评分提示词
+    custom_prompt: Optional[str] = None
+    class_id: Optional[int] = None  # 新增：所属班级ID
 
 
 class TaskResponse(BaseModel):
@@ -39,7 +41,8 @@ class TaskResponse(BaseModel):
     is_active: int
     task_type: str
     enabled_indicators: str
-    custom_prompt: Optional[str] = None  # 自定义AI评分提示词
+    custom_prompt: Optional[str] = None
+    class_id: Optional[int] = None  # 新增：所属班级ID
 
 
 class TaskListResponse(BaseModel):

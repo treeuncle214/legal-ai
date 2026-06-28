@@ -62,14 +62,18 @@ export default function Layout({ children, menuItems, title, userInfo, onLogout 
                     />
                     <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                         <span>👤 {userInfo?.display_name || userInfo?.username}</span>
-                        <Button
-                            type="text"
-                            icon={<LogoutOutlined />}
-                            onClick={onLogout}
-                            danger
-                        >
-                            退出登录
-                        </Button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                            <span>👤 {userInfo?.display_name || userInfo?.username}</span>
+                            <Button type="text" onClick={() => navigate('/change-password')}>修改密码</Button>
+                            <Button
+                                type="text"
+                                icon={<LogoutOutlined />}
+                                onClick={onLogout}
+                                danger
+                            >
+                                退出登录
+                            </Button>
+                        </div>
                     </div>
                 </Header>
                 <Content style={{

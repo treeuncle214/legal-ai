@@ -19,6 +19,7 @@ def add_user(username, password, role="student", display_name=None):
         )
         db.add(user)
         db.commit()
+        db.refresh(user)
         return user.id
     finally:
         db.close()
@@ -31,6 +32,21 @@ def get_user(username):
         return user.to_dict() if user else None
     finally:
         db.close()
+
+
+def get_user_by_id(user_id: int):
+    """根据ID获取用户"""
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        return user.to_dict() if user else None
+    finally:
+        db.close()
+
+
+def get_user_by_session(db: Session, username: str):
+    """使用已有会话获取用户（用于事务内）"""
+    return db.query(User).filter(User.username == username).first()
 
 
 def get_all_students():
@@ -63,8 +79,3 @@ def delete_user(username):
         return False
     finally:
         db.close()
-
-
-def get_user_by_session(db: Session, username: str):
-    """使用已有会话获取用户（用于事务内）"""
-    return db.query(User).filter(User.username == username).first()

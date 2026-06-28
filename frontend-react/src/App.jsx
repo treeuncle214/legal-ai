@@ -5,6 +5,7 @@ import zhCN from 'antd/locale/zh_CN';
 
 // 公共组件
 import AppLayout from './components/Layout';
+import ChangePassword from './pages/ChangePassword';
 
 // 学生端页面
 import StudentLogin from './pages/student/Login';
@@ -12,7 +13,7 @@ import StudentTasks from './pages/student/Tasks';
 import StudentSubmit from './pages/student/Submit';
 import StudentProfile from './pages/student/Profile';
 import MySubmissions from './pages/student/MySubmissions';
-import ScoreSummary from './pages/student/ScoreSummary';  // 新增
+import ScoreSummary from './pages/student/ScoreSummary';
 
 // 教师端页面
 import TeacherLogin from './pages/teacher/Login';
@@ -20,6 +21,8 @@ import TeacherTasks from './pages/teacher/Tasks';
 import TeacherReview from './pages/teacher/Review';
 import TeacherScores from './pages/teacher/Scores';
 import TeacherStudentProfile from './pages/teacher/StudentProfile';
+import ClassManagement from './pages/teacher/ClassManagement';
+import ClassDetail from './pages/teacher/ClassDetail';
 
 // 图标
 import {
@@ -29,7 +32,8 @@ import {
   CheckCircleOutlined,
   BarChartOutlined,
   IdcardOutlined,
-  TrophyOutlined,  // 新增
+  TrophyOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 
 // ==================== 学生端布局包装器 ====================
@@ -59,7 +63,7 @@ function StudentLayout() {
   const menuItems = [
     { key: '/student/tasks', icon: <FileTextOutlined />, label: '任务列表' },
     { key: '/student/my-submissions', icon: <CheckCircleOutlined />, label: '我的提交' },
-    { key: '/student/score-summary', icon: <TrophyOutlined />, label: '成绩总结' },  // 新增
+    { key: '/student/score-summary', icon: <TrophyOutlined />, label: '成绩总结' },
     { key: '/student/profile', icon: <UserOutlined />, label: '能力画像' },
   ];
 
@@ -73,9 +77,10 @@ function StudentLayout() {
       <Routes>
         <Route path="tasks" element={<StudentTasks />} />
         <Route path="my-submissions" element={<MySubmissions />} />
-        <Route path="score-summary" element={<ScoreSummary />} />  {/* 新增 */}
+        <Route path="score-summary" element={<ScoreSummary />} />
         <Route path="submit/:taskId" element={<StudentSubmit />} />
         <Route path="profile" element={<StudentProfile />} />
+        {/* 移除 change-password 路由，已移到顶层 */}
         <Route path="*" element={<Navigate to="tasks" replace />} />
       </Routes>
     </AppLayout>
@@ -108,6 +113,7 @@ function TeacherLayout() {
 
   const menuItems = [
     { key: '/teacher/tasks', icon: <FileTextOutlined />, label: '任务管理' },
+    { key: '/teacher/classes', icon: <TeamOutlined />, label: '班级管理' },
     { key: '/teacher/review', icon: <CheckCircleOutlined />, label: '审批评分' },
     { key: '/teacher/scores', icon: <BarChartOutlined />, label: '成绩总览' },
     { key: '/teacher/profile', icon: <IdcardOutlined />, label: '学生画像' },
@@ -122,9 +128,12 @@ function TeacherLayout() {
     >
       <Routes>
         <Route path="tasks" element={<TeacherTasks />} />
+        <Route path="classes" element={<ClassManagement />} />
+        <Route path="class/:classId" element={<ClassDetail />} />
         <Route path="review" element={<TeacherReview />} />
         <Route path="scores" element={<TeacherScores />} />
         <Route path="profile" element={<TeacherStudentProfile />} />
+        {/* 移除 change-password 路由，已移到顶层 */}
         <Route path="*" element={<Navigate to="tasks" replace />} />
       </Routes>
     </AppLayout>
@@ -164,6 +173,10 @@ export default function App() {
       <AntApp>
         <BrowserRouter>
           <Routes>
+            {/* ===== 顶层路由 ===== */}
+            {/* 修改密码（独立页面，无需布局） */}
+            <Route path="/change-password" element={<ChangePassword />} />
+
             {/* 学生端 */}
             <Route path="/student/login" element={<StudentLoginWrapper />} />
             <Route path="/student/*" element={<StudentLayout />} />

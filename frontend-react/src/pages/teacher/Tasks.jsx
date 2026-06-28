@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Table, Button, Modal, Form, Input, DatePicker, message, Popconfirm, Tag, Select, Checkbox, Space } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
-import { getTasks, createTask, updateTask, deleteTask, getDimensions } from '../../api';
+import { getTasks, createTask, updateTask, deleteTask, getDimensions, getClasses } from '../../api';
 import dayjs from 'dayjs';
 
 const { TextArea } = Input;
@@ -16,6 +16,7 @@ export default function TeacherTasks() {
     const [editingTask, setEditingTask] = useState(null);
     const [taskType, setTaskType] = useState('任务实践');
     const [form] = Form.useForm();
+    const [classes, setClasses] = useState([]);
 
     const fetchTasks = async () => {
         setLoading(true);
@@ -59,9 +60,19 @@ export default function TeacherTasks() {
         }
     };
 
+    const fetchClasses = async () => {
+        try {
+            const data = await getClasses();
+            setClasses(data || []);
+        } catch (error) {
+            console.error('获取班级列表失败:', error);
+        }
+    };
+
     useEffect(() => {
         fetchTasks();
         fetchDimensions();
+        fetchClasses();  // 新增
     }, []);
 
     const handleCreate = () => {
@@ -71,7 +82,8 @@ export default function TeacherTasks() {
         form.setFieldsValue({
             task_type: '任务实践',
             enabled_indicators: [],
-            custom_prompt: ''
+            custom_prompt: '',
+            class_id: classes.length > 0 ? classes[0].id : undefined,  // 默认选择第一个班级
         });
         setModalOpen(true);
     };
@@ -80,7 +92,6 @@ export default function TeacherTasks() {
         setEditingTask(record);
         setTaskType(record.task_type || '任务实践');
 
-        // 将逗号分隔的字符串转换为数组
         let enabledIndicatorsArray = [];
         if (record.enabled_indicators) {
             enabledIndicatorsArray = record.enabled_indicators.split(',').filter(s => s);
@@ -92,7 +103,8 @@ export default function TeacherTasks() {
             due_date: record.due_date ? dayjs(record.due_date) : null,
             task_type: record.task_type || '任务实践',
             enabled_indicators: enabledIndicatorsArray,
-            custom_prompt: record.custom_prompt || ''
+            custom_prompt: record.custom_prompt || '',
+            class_id: record.class_id,  // 新增
         });
         setModalOpen(true);
     };
@@ -127,7 +139,8 @@ export default function TeacherTasks() {
                 due_date: values.due_date?.format('YYYY-MM-DD'),
                 task_type: values.task_type,
                 enabled_indicators: enabledIndicatorsStr,
-                custom_prompt: values.custom_prompt || null  // 新增：自定义提示词
+                custom_prompt: values.custom_prompt || null,
+                class_id: values.class_id,  // 新增
             };
 
             if (editingTask) {
@@ -234,6 +247,18 @@ export default function TeacherTasks() {
                 }}>
                     <Form.Item name="title" label="任务名称" rules={[{ required: true }]}>
                         <Input placeholder="例：法律检索实践作业1" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="class_id"
+                        label="所属班级"
+                        rules={[{ required: true, message: '请选择所属班级' }]}
+                    >
+                        <Select placeholder="请选择班级">
+                            {classes.map(cls => (
+                                <Option key={cls.id} value={cls.id}>{cls.name}</Option>
+                            ))}
+                        </Select>
                     </Form.Item>
 
                     <Form.Item name="description" label="任务描述">
