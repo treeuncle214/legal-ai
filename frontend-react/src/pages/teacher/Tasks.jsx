@@ -141,6 +141,8 @@ export default function TeacherTasks() {
                 enabled_indicators: enabledIndicatorsStr,
                 custom_prompt: values.custom_prompt || null,
                 class_id: values.class_id,  // 新增
+                max_submissions: values.max_submissions || 3,
+                allow_after_deadline: values.allow_after_deadline || 0
             };
 
             if (editingTask) {
@@ -153,7 +155,10 @@ export default function TeacherTasks() {
                     taskData.due_date,
                     taskData.task_type,
                     taskData.enabled_indicators,
-                    taskData.custom_prompt
+                    taskData.custom_prompt,
+                    taskData.max_submissions,
+                    taskData.allow_after_deadline,
+                    taskData.class_id
                 );
                 message.success('任务已发布');
             }
@@ -161,7 +166,17 @@ export default function TeacherTasks() {
             fetchTasks();
         } catch (error) {
             console.error('操作失败:', error);
-            message.error('操作失败: ' + (error.message || '未知错误'));
+            // 显示更详细的错误信息
+            if (error.response?.data?.detail) {
+                if (Array.isArray(error.response.data.detail)) {
+                    const msg = error.response.data.detail.map(d => d.msg).join(', ');
+                    message.error('操作失败: ' + msg);
+                } else {
+                    message.error('操作失败: ' + error.response.data.detail);
+                }
+            } else {
+                message.error('操作失败: ' + (error.message || '未知错误'));
+            }
         }
     };
 

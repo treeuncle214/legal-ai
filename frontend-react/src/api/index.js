@@ -26,8 +26,9 @@ export const getTasks = () =>
 export const getTaskDetail = (taskId) =>
     api.get(`/api/tasks/${taskId}`);
 
-export const createTask = (title, description, due_date, task_type, enabled_indicators, max_submissions = 3, allow_after_deadline = 0) =>
-    api.post('/api/tasks', { title, description, due_date, task_type, enabled_indicators, max_submissions, allow_after_deadline });
+export const createTask = (title, description, due_date, task_type, enabled_indicators, max_submissions = 3, allow_after_deadline = 0, custom_prompt = null,
+    class_id = null) =>
+    api.post('/api/tasks', { title, description, due_date, task_type, enabled_indicators, max_submissions, allow_after_deadline,class_id });
 
 export const updateTask = (taskId, data) =>
     api.put(`/api/tasks/${taskId}`, data);

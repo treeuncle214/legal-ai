@@ -132,50 +132,74 @@ export default function StudentSubmit() {
             </Card>
 
             <Card title="上传 Word 文档（必须同时上传两个文件）">
-                <div style={{ display: 'flex', gap: 20 }}>
-                    <div style={{ flex: 1 }}>
-                        <h4>📋 检索过程记录</h4>
+                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 250 }}>
+                        <h4 style={{ marginBottom: 8 }}>📋 检索过程记录</h4>
                         <Dragger
                             accept=".docx"
-                            beforeUpload={(file) => { setFile1(file); return false; }}
+                            beforeUpload={(file) => {
+                                if (file.size > 10 * 1024 * 1024) {
+                                    message.error('文件大小不能超过10MB');
+                                    return false;
+                                }
+                                setFile1(file);
+                                return false;
+                            }}
                             showUploadList={true}
                             fileList={file1 ? [file1] : []}
+                            onRemove={() => setFile1(null)}
                             disabled={loading || !canSubmit}
+                            maxCount={1}
                         >
                             <p className="ant-upload-drag-icon"><InboxOutlined /></p>
                             <p className="ant-upload-text">点击或拖拽上传</p>
+                            <p className="ant-upload-hint">仅支持 .docx 格式</p>
                         </Dragger>
                     </div>
-                    <div style={{ flex: 1 }}>
-                        <h4>📄 最终检索结果</h4>
+                    <div style={{ flex: 1, minWidth: 250 }}>
+                        <h4 style={{ marginBottom: 8 }}>📄 最终检索结果</h4>
                         <Dragger
                             accept=".docx"
-                            beforeUpload={(file) => { setFile2(file); return false; }}
+                            beforeUpload={(file) => {
+                                if (file.size > 10 * 1024 * 1024) {
+                                    message.error('文件大小不能超过10MB');
+                                    return false;
+                                }
+                                setFile2(file);
+                                return false;
+                            }}
                             showUploadList={true}
                             fileList={file2 ? [file2] : []}
+                            onRemove={() => setFile2(null)}
                             disabled={loading || !canSubmit}
+                            maxCount={1}
                         >
                             <p className="ant-upload-drag-icon"><InboxOutlined /></p>
                             <p className="ant-upload-text">点击或拖拽上传</p>
+                            <p className="ant-upload-hint">仅支持 .docx 格式</p>
                         </Dragger>
                     </div>
                 </div>
+
                 {!canSubmit && (
                     <div style={{ textAlign: 'center', marginTop: 16, color: '#ff4d4f' }}>
                         {submitDisabledReason}
                     </div>
                 )}
-                <div style={{ marginTop: 16, textAlign: 'center' }}>
+
+                <div style={{ marginTop: 24, textAlign: 'center' }}>
                     <Button
                         type="primary"
                         size="large"
                         onClick={handleSubmit}
                         loading={loading}
                         disabled={!file1 || !file2 || !canSubmit}
+                        style={{ minWidth: 200 }}
                     >
-                        提交作业
+                        {loading ? '提交中...' : '提交作业'}
                     </Button>
                 </div>
+
                 {loading && <Spin tip="正在上传..." style={{ display: 'block', marginTop: 16 }} />}
             </Card>
         </div>

@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Table, Card, Tag, Button, Modal, Descriptions, message, Collapse, Typography } from 'antd';
-import { EyeOutlined } from '@ant-design/icons';
+import { Table, Card, Tag, Button, Modal, Descriptions, message, Collapse, Typography, Space } from 'antd';
+import { EyeOutlined, FileWordOutlined } from '@ant-design/icons';
 import { getStudentSubmissions } from '../../api';
-import { FileWordOutlined } from '@ant-design/icons';
 
 const { Panel } = Collapse;
 const { Text } = Typography;
@@ -25,7 +24,6 @@ export default function MySubmissions() {
         setLoading(true);
         try {
             const response = await getStudentSubmissions(username);
-            console.log('提交记录原始响应:', response);
             let list = [];
             if (Array.isArray(response)) {
                 list = response;
@@ -49,7 +47,6 @@ export default function MySubmissions() {
         setModalOpen(true);
     };
 
-    // 获取状态显示
     const getStatusInfo = (record) => {
         if (record.is_reviewed === 1) {
             if (record.score_published === 1) {
@@ -72,7 +69,7 @@ export default function MySubmissions() {
             message.error('认证信息缺失，请重新登录');
             return;
         }
-        const downloadUrl = `http://localhost:8000/api/download/${encodeURIComponent(filename)}`;
+        const downloadUrl = `/api/download/${encodeURIComponent(filename)}`;
         try {
             const response = await fetch(downloadUrl, {
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -84,10 +81,27 @@ export default function MySubmissions() {
                 }
                 throw new Error(`HTTP ${response.status}`);
             }
+
+            // 从 Content-Disposition 头提取原始文件名
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let originalFileName = filename;
+            if (contentDisposition) {
+                const match = contentDisposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/);
+                if (match) {
+                    originalFileName = decodeURIComponent(match[1]);
+                }
+            }
+
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
-            window.open(url, '_blank');
-            setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = originalFileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(() => window.URL.revokeObjectURL(url), 5000);
+            message.success('文档下载成功');
         } catch (error) {
             console.error('下载失败:', error);
             message.error('下载失败，请稍后重试');
@@ -182,26 +196,31 @@ export default function MySubmissions() {
                                 <div style={{ background: '#f5f5f5', padding: 12, borderRadius: 8, whiteSpace: 'pre-wrap', maxHeight: 300, overflow: 'auto' }}>
                                     {currentSubmission.final_output || '无'}
                                 </div>
-                                {/* 新增：Word 文档下载按钮组 */}
-                                {currentSubmission.word_file_path && (
-                                    <div style={{ marginTop: 8, textAlign: 'center' }}>
+                            </Panel>
+                            {/* Word文档下载按钮 - 放在最下面作为独立面板 */}
+                            {currentSubmission.word_file_path && (
+                                <Panel
+                                    header={`📎 Word文档下载`}
+                                    key="word_files"
+                                    style={{ border: 'none' }}
+                                >
+                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '8px 0' }}>
                                         {currentSubmission.word_file_path.split(',').map((f, idx) => (
                                             <Button
                                                 key={idx}
                                                 type="primary"
                                                 icon={<FileWordOutlined />}
                                                 onClick={() => downloadWordFile(f.trim())}
-                                                style={{ margin: '0 4px' }}
                                             >
                                                 查看 Word 文档 {idx + 1}
                                             </Button>
                                         ))}
-                                        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-                                            （点击打开文档）
+                                        <Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
+                                            （点击下载文档）
                                         </Text>
                                     </div>
-                                )}
-                            </Panel>
+                                </Panel>
+                            )}
                         </Collapse>
 
                         {currentSubmission.is_reviewed && currentSubmission.score_published === 1 && currentSubmission.teacher_comment && (

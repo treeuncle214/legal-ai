@@ -20,7 +20,7 @@ export default function TeacherReview() {
     const [comment, setComment] = useState('');
     const [expandedKeys, setExpandedKeys] = useState([]);
     const [publishing, setPublishing] = useState(false);
-    const [tasksLoaded, setTasksLoaded] = useState(false); 
+    const [tasksLoaded, setTasksLoaded] = useState(false);
 
     // 加载任务列表
     useEffect(() => {
@@ -31,11 +31,11 @@ export default function TeacherReview() {
     const fetchTasks = async () => {
         try {
             const taskList = await getTasks();
-            console.log('任务列表原始数据:', taskList);   // 新增
+            console.log('任务列表原始数据:', taskList);
             setTasks(taskList || []);
             if (taskList && taskList.length > 0) {
                 const firstId = taskList[0].id;
-                console.log('第一个任务ID:', firstId);    // 新增
+                console.log('第一个任务ID:', firstId);
                 if (firstId && firstId > 0) {
                     setSelectedTaskId(firstId);
                     setTasksLoaded(true);
@@ -82,7 +82,6 @@ export default function TeacherReview() {
         if (!taskId) return;
         setLoading(true);
         try {
-            // 调用新接口获取该任务下所有提交
             const response = await getTaskReviews(taskId);
             console.log('任务提交记录:', response);
             let list = [];
@@ -171,7 +170,6 @@ export default function TeacherReview() {
 
         setPublishing(true);
         try {
-            // 使用原生 fetch 替代 api.post
             const token = JSON.parse(sessionStorage.getItem('teacherUser')).access_token;
             const response = await fetch('http://localhost:8000/api/review/publish_batch', {
                 method: 'POST',
@@ -204,6 +202,7 @@ export default function TeacherReview() {
         return content.substring(0, maxLength) + '...';
     };
 
+    // 打开Word文档 - 支持多文件，保留原始文件名
     const openWordDocument = async (filePath) => {
         if (!filePath) {
             message.warning('文件路径不存在');
@@ -214,27 +213,63 @@ export default function TeacherReview() {
             message.warning('无有效文件');
             return;
         }
+
         const teacherUser = JSON.parse(sessionStorage.getItem('teacherUser'));
         const token = teacherUser.access_token;
 
+        let hasError = false;
+        let successCount = 0;
+
         for (const filename of files) {
-            const downloadUrl = `http://localhost:8000/api/download/${encodeURIComponent(filename)}`;
+            const downloadUrl = `/api/download/${encodeURIComponent(filename)}`;
             try {
                 const response = await fetch(downloadUrl, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
+
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                // 从 Content-Disposition 头提取原始文件名
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let originalFileName = filename; // 默认使用存储文件名
+
+                if (contentDisposition) {
+                    // 匹配 filename="xxx.docx" 或 filename=xxx.docx
+                    const match = contentDisposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/);
+                    if (match) {
+                        originalFileName = decodeURIComponent(match[1]);
+                    }
+                }
+
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
-                window.open(url, '_blank');
-                setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+
+                // 使用 a 标签下载
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = originalFileName;  // 使用从响应头提取的文件名
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                setTimeout(() => window.URL.revokeObjectURL(url), 5000);
+                successCount++;
+
             } catch (error) {
                 console.error('下载失败:', error);
-                message.error(`下载 ${filename} 失败`);
+                message.error(`下载失败`);
+                hasError = true;
             }
         }
-    };
 
+        if (!hasError && successCount > 1) {
+            message.success(`已下载 ${successCount} 个文档`);
+        } else if (!hasError && successCount === 1) {
+            message.success('文档下载成功');
+        }
+    };
+    
+    // 表格列定义
     const columns = [
         { title: '学号', dataIndex: 'student_username', width: 120 },
         {
@@ -244,10 +279,31 @@ export default function TeacherReview() {
             render: (text) => text?.replace('T', ' ').substring(0, 19),
         },
         {
-            title: '提交方式',
-            dataIndex: 'submit_type',
-            width: 100,
-            render: (type) => type === 'word' ? <Tag color="blue">Word文档</Tag> : <Tag color="green">文本框</Tag>,
+            title: '查看原文档',
+            dataIndex: 'word_file_path',
+            width: 180,
+            render: (filePath, record) => {
+                if (record.submit_type === 'word' && filePath) {
+                    const files = filePath.split(',').map(f => f.trim()).filter(f => f);
+                    return (
+                        <Space>
+                            {files.map((f, idx) => (
+                                <Button
+                                    key={idx}
+                                    type="link"
+                                    size="small"
+                                    icon={<FileWordOutlined />}
+                                    onClick={() => openWordDocument(f.trim())}
+                                    style={{ padding: '0 4px' }}
+                                >
+                                    文档{idx + 1}
+                                </Button>
+                            ))}
+                        </Space>
+                    );
+                }
+                return <Tag color="green">文本框</Tag>;
+            },
         },
         {
             title: '状态',
@@ -363,19 +419,6 @@ export default function TeacherReview() {
                             </Descriptions.Item>
                             <Descriptions.Item label="提交方式">
                                 {currentSub.submit_type === 'word' ? 'Word文档' : '文本框'}
-                                {currentSub.submit_type === 'word' && currentSub.word_file_path && (
-                                    <Tooltip title="打开Word文档">
-                                        <Button
-                                            type="link"
-                                            size="small"
-                                            icon={<EyeOutlined />}
-                                            onClick={() => openWordDocument(currentSub.word_file_path)}
-                                            style={{ marginLeft: 8 }}
-                                        >
-                                            查看原文档
-                                        </Button>
-                                    </Tooltip>
-                                )}
                             </Descriptions.Item>
                             <Descriptions.Item label="状态" span={2}>
                                 {currentSub.is_reviewed ? '已批改' : '待批改'}
@@ -397,10 +440,19 @@ export default function TeacherReview() {
                                 {currentSub.submit_type === 'word' && currentSub.word_file_path && (
                                     <div style={{ marginTop: 8, textAlign: 'center' }}>
                                         {currentSub.word_file_path.split(',').map((f, idx) => (
-                                            <Button key={idx} type="primary" icon={<FileWordOutlined />} onClick={() => openWordDocument(f.trim())} style={{ margin: '0 4px' }}>
+                                            <Button
+                                                key={idx}
+                                                type="primary"
+                                                icon={<FileWordOutlined />}
+                                                onClick={() => openWordDocument(f.trim())}
+                                                style={{ margin: '0 4px' }}
+                                            >
                                                 查看原文档 {idx + 1}
                                             </Button>
                                         ))}
+                                        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+                                            （点击下载）
+                                        </Text>
                                     </div>
                                 )}
                             </Panel>
