@@ -11,19 +11,15 @@ from backend.core.auth import (
     verify_token
 )
 
-# 从 scorer 导入，并提供默认值以防止导入错误
+# 从子模块导入，保持向后兼容
 try:
-    from backend.core.scorer import (
-        score_submission,
-        score_exercise,
-        score_final_report,
-        GRADE_TO_SCORE as LEVEL_TO_SCORE,
-        INDICATOR_RUBRIC,
-        FINAL_REPORT_MODULES,
-        SCORING_DIMENSIONS
-    )
+    from backend.core.calculators.grade_mapper import GRADE_TO_SCORE as LEVEL_TO_SCORE, score_to_level, level_to_score
+    from backend.core.calculators.dimension_calculator import SCORING_DIMENSIONS
+    from backend.core.prompts.templates import INDICATOR_RUBRIC
+    from backend.core.prompts.final_report_prompt import MODULE_CONFIG as FINAL_REPORT_MODULES
+    from backend.core.scorer import score_submission, score_exercise, score_final_report
 except ImportError as e:
-    print(f"警告: scorer 模块导入失败: {e}")
+    print(f"警告: 评分模块导入失败: {e}")
     # 提供默认实现
     def score_submission(task, submission):
         return {"dimension_scores": {}, "comment": "评分服务不可用"}
@@ -35,9 +31,9 @@ except ImportError as e:
         return {"dimension_scores": {}, "comment": "评分服务不可用"}
     
     LEVEL_TO_SCORE = {"A": 100, "B": 80, "C": 60, "D": 40}
+    SCORING_DIMENSIONS = {}
     INDICATOR_RUBRIC = {}
     FINAL_REPORT_MODULES = []
-    SCORING_DIMENSIONS = {}
 
 __all__ = [
     "verify_password",
@@ -51,5 +47,7 @@ __all__ = [
     "LEVEL_TO_SCORE",
     "INDICATOR_RUBRIC",
     "FINAL_REPORT_MODULES",
-    "SCORING_DIMENSIONS"
+    "SCORING_DIMENSIONS",
+    "score_to_level",
+    "level_to_score",
 ]

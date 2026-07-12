@@ -27,7 +27,8 @@ def add_submission(
     word_file_path: str = None,
     word_content: str = None,
     ai_score_status: str = "pending",
-    is_reviewed: int = 0
+    is_reviewed: int = 0,
+    original_filenames: str = None
 ) -> int:
     conn = get_db_connection()
     try:
@@ -38,18 +39,38 @@ def add_submission(
             word_file_path = ""
         if word_content is None:
             word_content = ""
+        if original_filenames is None:
+            original_filenames = ""
 
-        cursor.execute("""
-            INSERT INTO submissions (
+        # 检查 original_filenames 字段是否存在
+        cursor.execute("PRAGMA table_info(submissions)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        if 'original_filenames' in columns:
+            cursor.execute("""
+                INSERT INTO submissions (
+                    task_id, student_username, process_log, ai_interaction_log,
+                    final_output, tools_used, submit_type, word_file_path, word_content,
+                    submit_time, ai_score_status, is_reviewed, original_filenames
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                task_id, student_username, process_log, ai_interaction_log,
+                final_output, tools_used, submit_type, word_file_path, word_content,
+                submit_time, ai_score_status, is_reviewed, original_filenames
+            ))
+        else:
+            cursor.execute("""
+                INSERT INTO submissions (
+                    task_id, student_username, process_log, ai_interaction_log,
+                    final_output, tools_used, submit_type, word_file_path, word_content,
+                    submit_time, ai_score_status, is_reviewed
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
                 task_id, student_username, process_log, ai_interaction_log,
                 final_output, tools_used, submit_type, word_file_path, word_content,
                 submit_time, ai_score_status, is_reviewed
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            task_id, student_username, process_log, ai_interaction_log,
-            final_output, tools_used, submit_type, word_file_path, word_content,
-            submit_time, ai_score_status, is_reviewed
-        ))
+            ))
+        
         conn.commit()
         return cursor.lastrowid
     except Exception as e:
@@ -507,6 +528,26 @@ def get_submission_for_review(submission_id: int, include_scores: bool = True) -
         return result
     except Exception as e:
         logger.error(f"获取提交详情失败: {e}")
+        return None
+    finally:
+        conn.close()
+
+def get_submission_by_file_path(filename: str) -> Optional[Dict]:
+    """根据存储的文件名查找提交记录"""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, word_file_path, original_filenames 
+            FROM submissions 
+            WHERE word_file_path LIKE ?
+        """, (f"%{filename}%",))
+        row = cursor.fetchone()
+        if row:
+            return {"id": row[0], "word_file_path": row[1], "original_filenames": row[2]}
+        return None
+    except Exception as e:
+        logger.error(f"查询提交记录失败: {e}")
         return None
     finally:
         conn.close()

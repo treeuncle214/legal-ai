@@ -222,6 +222,31 @@ export default function MySubmissions() {
                                 </Panel>
                             )}
                         </Collapse>
+                        {/* ========== 指标评分详情（新增） ========== */}
+                        {currentSubmission.indicator_scores && Object.keys(currentSubmission.indicator_scores).length > 0 && (
+                            <>
+                                <h4>指标评分详情</h4>
+                                <Descriptions column={2} bordered size="small" style={{ marginBottom: 16 }}>
+                                    {Object.entries(currentSubmission.indicator_scores).map(([key, score]) => (
+                                        <Descriptions.Item key={key} label={key}>
+                                            <span style={{ fontWeight: 'bold' }}>
+                                                {typeof score === 'number' ? score.toFixed(2) : score} 分
+                                            </span>
+                                            {currentSubmission.indicator_levels && (
+                                                <Tag style={{ marginLeft: 8 }}>
+                                                    {currentSubmission.indicator_levels[key]}
+                                                </Tag>
+                                            )}
+                                            {currentSubmission.indicator_comments && currentSubmission.indicator_comments[key] && (
+                                                <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                                                    {currentSubmission.indicator_comments[key]}
+                                                </div>
+                                            )}
+                                        </Descriptions.Item>
+                                    ))}
+                                </Descriptions>
+                            </>
+                        )}
 
                         {currentSubmission.is_reviewed && currentSubmission.score_published === 1 && currentSubmission.teacher_comment && (
                             <>

@@ -1,3 +1,4 @@
+// frontend-react/src/pages/student/Login.jsx
 import { useState } from 'react';
 import { Form, Input, Button, Card, message, Typography } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
@@ -12,15 +13,25 @@ export default function StudentLogin({ onLoginSuccess }) {
         setLoading(true);
         try {
             const userData = await login(values.username, values.password);
+            console.log('登录返回数据:', userData);
+
             if (userData.role !== 'student') {
                 message.error('请使用学生账号登录');
                 return;
             }
+
+            // ✅ 存储用户信息到 localStorage
+            localStorage.setItem('user', JSON.stringify({
+                username: userData.username,
+                role: userData.role,
+                display_name: userData.display_name || userData.username
+            }));
+            localStorage.setItem('token', userData.token || '');
+
             message.success('登录成功');
             onLoginSuccess(userData);
         } catch (err) {
             console.error('登录错误:', err);
-            // ========== 修复：正确提取后端返回的错误信息 ==========
             const errorMsg = err.response?.data?.detail || err.message || '登录失败，请检查网络';
             message.error(errorMsg);
         } finally {

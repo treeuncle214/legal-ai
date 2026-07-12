@@ -1,10 +1,22 @@
-import { useState, useEffect } from 'react';
-import { Table, Button, Modal, Input, message, Popconfirm, Tag, Space, Tabs, Form, Select } from 'antd';
-import { PlusOutlined, DeleteOutlined, UserOutlined, TeamOutlined, UserAddOutlined } from '@ant-design/icons';
+import { useState, useEffect, useRef } from 'react';
+import {
+    Table, Button, Modal, Input, message, Popconfirm, Tag, Space,
+    Tabs, Form, Select, Upload, Alert, Progress, Typography
+} from 'antd';
+import {
+    PlusOutlined, DeleteOutlined, UserOutlined, TeamOutlined,
+    UserAddOutlined, UploadOutlined, DownloadOutlined,
+    FileExcelOutlined, CheckCircleOutlined, CloseCircleOutlined
+} from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { getClasses, createClass, deleteClass, getUsers, createUser, deleteUser } from '../../api';
+import {
+    getClasses, createClass, deleteClass, getUsers, createUser,
+    deleteUser, batchImportStudents, getTeachersForClass
+} from '../../api';
+import * as XLSX from 'xlsx';
 
 const { TabPane } = Tabs;
+const { Text } = Typography;
 
 export default function ClassManagement() {
     const [classes, setClasses] = useState([]);
@@ -12,6 +24,8 @@ export default function ClassManagement() {
     const [loading, setLoading] = useState(false);
     const [modalOpen, setModalOpen] = useState(false);
     const [className, setClassName] = useState('');
+    const [selectedTeacher, setSelectedTeacher] = useState(null);
+    const [allTeachers, setAllTeachers] = useState([]);
     const [submitting, setSubmitting] = useState(false);
     const navigate = useNavigate();
 
@@ -19,6 +33,14 @@ export default function ClassManagement() {
     const [userModalOpen, setUserModalOpen] = useState(false);
     const [newUser, setNewUser] = useState({ username: '', password: '', role: 'student', display_name: '' });
     const [userSubmitting, setUserSubmitting] = useState(false);
+
+    // 批量导入相关
+    const [importModalOpen, setImportModalOpen] = useState(false);
+    const [importFile, setImportFile] = useState(null);
+    const [importResult, setImportResult] = useState(null);
+    const [importLoading, setImportLoading] = useState(false);
+    const [defaultClass, setDefaultClass] = useState(null);
+    const fileInputRef = useRef(null);
 
     // 判断是否为 admin
     const isAdmin = () => {
@@ -29,6 +51,15 @@ export default function ClassManagement() {
             return user.username === 'admin';
         } catch {
             return false;
+        }
+    };
+
+    const currentUser = () => {
+        try {
+            const user = sessionStorage.getItem('teacherUser');
+            return user ? JSON.parse(user) : null;
+        } catch {
+            return null;
         }
     };
 
@@ -46,21 +77,50 @@ export default function ClassManagement() {
         }
     };
 
+    const fetchTeachers = async () => {
+        if (!isAdmin()) return;
+        try {
+            const data = await getTeachersForClass();
+            setAllTeachers(data || []);
+        } catch (error) {
+            console.error('获取教师列表失败:', error);
+        }
+    };
+
     const handleCreateClass = async () => {
         if (!className.trim()) {
             message.warning('请输入班级名称');
             return;
         }
+
+        // admin 必须选择负责教师
+        if (isAdmin() && !selectedTeacher) {
+            message.warning('请选择负责教师');
+            return;
+        }
+
         setSubmitting(true);
         try {
-            await createClass(className.trim());
-            message.success(`班级 "${className.trim()}" 创建成功`);
+            const params = new URLSearchParams();
+            params.append('name', className.trim());
+            if (isAdmin() && selectedTeacher) {
+                params.append('teacher_username', selectedTeacher);
+            }
+
+            await createClass(className.trim(), selectedTeacher);
+            const teacherName = allTeachers.find(t => t.username === selectedTeacher)?.display_name || selectedTeacher;
+            message.success(`班级 "${className.trim()}" 创建成功${isAdmin() ? `，负责人: ${teacherName}` : ''}`);
             setModalOpen(false);
             setClassName('');
+            setSelectedTeacher(null);
             fetchClasses();
         } catch (error) {
             console.error('创建班级失败:', error);
-            message.error('创建班级失败');
+            if (error.response?.data?.detail) {
+                message.error(error.response.data.detail);
+            } else {
+                message.error('创建班级失败');
+            }
         } finally {
             setSubmitting(false);
         }
@@ -140,11 +200,74 @@ export default function ClassManagement() {
         }
     };
 
+    // ==================== 批量导入 ====================
+    const handleFileChange = (file) => {
+        setImportFile(file);
+        setImportResult(null);
+        return false; // 阻止自动上传
+    };
+
+    const handleDownloadTemplate = () => {
+        const template = [
+            ['学号', '姓名', '初始密码', '班级名称'],
+            ['20241001', '张三', '123456', '法学2024级01班'],
+            ['20241002', '李四', '123456', '法学2024级01班'],
+        ];
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(template);
+        XLSX.utils.book_append_sheet(wb, ws, '学生导入');
+        XLSX.writeFile(wb, '学生导入模板.xlsx');
+        message.success('模板下载成功');
+    };
+
+    const handleImport = async () => {
+        if (!importFile) {
+            message.warning('请选择要导入的文件');
+            return;
+        }
+
+        setImportLoading(true);
+        try {
+            const formData = new FormData();
+            formData.append('file', importFile);
+            if (defaultClass) {
+                formData.append('default_class_name', defaultClass);
+            }
+
+            const result = await batchImportStudents(formData);
+            setImportResult(result);
+            message.success(result.message || '导入完成');
+
+            // 刷新数据
+            fetchClasses();
+            if (isAdmin()) fetchUsers();
+        } catch (error) {
+            console.error('导入失败:', error);
+            if (error.response?.data?.detail) {
+                message.error(error.response.data.detail);
+            } else {
+                message.error('导入失败');
+            }
+        } finally {
+            setImportLoading(false);
+        }
+    };
+
+    const resetImport = () => {
+        setImportFile(null);
+        setImportResult(null);
+        setDefaultClass(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
     // ==================== 页面加载 ====================
     useEffect(() => {
         fetchClasses();
         if (isAdmin()) {
             fetchUsers();
+            fetchTeachers();
         }
     }, []);
 
@@ -162,6 +285,12 @@ export default function ClassManagement() {
                     {text}
                 </Button>
             ),
+        },
+        {
+            title: '负责教师',
+            dataIndex: 'teacher_name',
+            width: 120,
+            render: (text) => text || '-',
         },
         {
             title: '学生数',
@@ -242,11 +371,17 @@ export default function ClassManagement() {
             <>
                 <Tabs defaultActiveKey="users">
                     <TabPane tab="👤 用户管理" key="users">
-                        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
+                        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
                             <span style={{ color: '#666' }}>管理所有学生和教师账号</span>
-                            <Button type="primary" icon={<UserAddOutlined />} onClick={() => setUserModalOpen(true)}>
-                                添加用户
-                            </Button>
+                            <Space>
+                                <Button
+                                    type="primary"
+                                    icon={<UserAddOutlined />}
+                                    onClick={() => setUserModalOpen(true)}
+                                >
+                                    添加用户
+                                </Button>
+                            </Space>
                         </div>
                         <Table
                             columns={userColumns}
@@ -258,10 +393,21 @@ export default function ClassManagement() {
                         />
                     </TabPane>
                     <TabPane tab="📚 班级管理" key="classes">
-                        <div style={{ marginBottom: 16 }}>
-                            <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
-                                创建班级
-                            </Button>
+                        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                            <Space>
+                                <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
+                                    创建班级
+                                </Button>
+                                <Button
+                                    icon={<UploadOutlined />}
+                                    onClick={() => {
+                                        resetImport();
+                                        setImportModalOpen(true);
+                                    }}
+                                >
+                                    批量导入学生
+                                </Button>
+                            </Space>
                         </div>
                         <Table
                             columns={classColumns}
@@ -282,17 +428,41 @@ export default function ClassManagement() {
                     onCancel={() => {
                         setModalOpen(false);
                         setClassName('');
+                        setSelectedTeacher(null);
                     }}
                     confirmLoading={submitting}
                     okText="创建"
                     cancelText="取消"
                 >
-                    <Input
-                        placeholder="请输入班级名称，如：法学2024-1班"
-                        value={className}
-                        onChange={(e) => setClassName(e.target.value)}
-                        onPressEnter={handleCreateClass}
-                    />
+                    <Form layout="vertical">
+                        <Form.Item label="班级名称" required>
+                            <Input
+                                placeholder="请输入班级名称，如：法学2024-1班"
+                                value={className}
+                                onChange={(e) => setClassName(e.target.value)}
+                                onPressEnter={handleCreateClass}
+                            />
+                        </Form.Item>
+                        {isAdmin() && (
+                            <Form.Item label="负责教师" required>
+                                <Select
+                                    placeholder="请选择负责教师"
+                                    value={selectedTeacher}
+                                    onChange={setSelectedTeacher}
+                                    showSearch
+                                    filterOption={(input, option) =>
+                                        option.children.toLowerCase().includes(input.toLowerCase())
+                                    }
+                                >
+                                    {allTeachers.map(t => (
+                                        <Select.Option key={t.username} value={t.username}>
+                                            {t.display_name} (已有 {t.class_count} 个班级)
+                                        </Select.Option>
+                                    ))}
+                                </Select>
+                            </Form.Item>
+                        )}
+                    </Form>
                 </Modal>
 
                 {/* 添加用户模态框 */}
@@ -341,6 +511,127 @@ export default function ClassManagement() {
                         </Form.Item>
                     </Form>
                 </Modal>
+
+                {/* 批量导入模态框 */}
+                <Modal
+                    title="批量导入学生"
+                    open={importModalOpen}
+                    onCancel={() => {
+                        setImportModalOpen(false);
+                        resetImport();
+                    }}
+                    footer={null}
+                    width={700}
+                >
+                    <div style={{ marginBottom: 16 }}>
+                        <Alert
+                            message="导入说明"
+                            description={
+                                <ul style={{ marginBottom: 0, paddingLeft: 16 }}>
+                                    <li>支持 .xlsx, .xls, .csv 格式</li>
+                                    <li>文件需包含：学号、姓名、初始密码（至少6位）、班级名称（可选）</li>
+                                    <li>如文件中未指定班级，将使用下方选择的默认班级</li>
+                                    <li>学号已存在的用户将跳过</li>
+                                </ul>
+                            }
+                            type="info"
+                            showIcon
+                        />
+                    </div>
+
+                    <div style={{ marginBottom: 16 }}>
+                        <Button
+                            icon={<DownloadOutlined />}
+                            onClick={handleDownloadTemplate}
+                            type="default"
+                        >
+                            下载导入模板
+                        </Button>
+                    </div>
+
+                    <Form layout="vertical">
+                        <Form.Item label="选择班级（如文件中未指定，将分配到该班级）">
+                            <Select
+                                placeholder="请选择默认班级"
+                                value={defaultClass}
+                                onChange={setDefaultClass}
+                                allowClear
+                                showSearch
+                                filterOption={(input, option) =>
+                                    option.children.toLowerCase().includes(input.toLowerCase())
+                                }
+                            >
+                                {classes.map(c => (
+                                    <Select.Option key={c.id} value={c.name}>
+                                        {c.name}
+                                    </Select.Option>
+                                ))}
+                            </Select>
+                        </Form.Item>
+
+                        <Form.Item label="上传文件">
+                            <Input
+                                ref={fileInputRef}
+                                type="file"
+                                accept=".xlsx,.xls,.csv"
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                        setImportFile(file);
+                                        setImportResult(null);
+                                    }
+                                }}
+                            />
+                            {importFile && (
+                                <div style={{ marginTop: 8, color: '#52c41a' }}>
+                                    <FileExcelOutlined /> {importFile.name}
+                                </div>
+                            )}
+                        </Form.Item>
+                    </Form>
+
+                    {importResult && (
+                        <div style={{ marginBottom: 16, padding: 12, background: '#f5f5f5', borderRadius: 4 }}>
+                            <div style={{ display: 'flex', gap: 24, marginBottom: 8 }}>
+                                <span>
+                                    <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                                    成功: <strong>{importResult.success_count || 0}</strong> 条
+                                </span>
+                                <span>
+                                    <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
+                                    失败: <strong>{importResult.failed_count || 0}</strong> 条
+                                </span>
+                            </div>
+                            {importResult.failed && importResult.failed.length > 0 && (
+                                <div style={{ maxHeight: 150, overflow: 'auto', fontSize: 12 }}>
+                                    {importResult.failed.map((item, idx) => (
+                                        <div key={idx} style={{ color: '#ff4d4f' }}>
+                                            第 {item.row} 行 ({item.username || '空'}): {item.errors.join('; ')}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <Button onClick={() => {
+                            setImportModalOpen(false);
+                            resetImport();
+                        }}>
+                            取消
+                        </Button>
+                        <Button
+                            type="primary"
+                            icon={<UploadOutlined />}
+                            onClick={handleImport}
+                            loading={importLoading}
+                            disabled={!importFile}
+                        >
+                            开始导入
+                        </Button>
+                    </div>
+                </Modal>
             </>
         );
     }
@@ -348,10 +639,21 @@ export default function ClassManagement() {
     // 普通教师：只显示班级管理
     return (
         <>
-            <div style={{ marginBottom: 16 }}>
-                <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
-                    创建班级
-                </Button>
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <Space>
+                    <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
+                        创建班级
+                    </Button>
+                    <Button
+                        icon={<UploadOutlined />}
+                        onClick={() => {
+                            resetImport();
+                            setImportModalOpen(true);
+                        }}
+                    >
+                        批量导入学生
+                    </Button>
+                </Space>
             </div>
 
             <Table
@@ -363,6 +665,7 @@ export default function ClassManagement() {
                 locale={{ emptyText: '暂无班级，请创建班级' }}
             />
 
+            {/* 创建班级模态框（普通教师） */}
             <Modal
                 title="创建班级"
                 open={modalOpen}
@@ -381,6 +684,127 @@ export default function ClassManagement() {
                     onChange={(e) => setClassName(e.target.value)}
                     onPressEnter={handleCreateClass}
                 />
+            </Modal>
+
+            {/* 批量导入模态框（普通教师） */}
+            <Modal
+                title="批量导入学生"
+                open={importModalOpen}
+                onCancel={() => {
+                    setImportModalOpen(false);
+                    resetImport();
+                }}
+                footer={null}
+                width={700}
+            >
+                <div style={{ marginBottom: 16 }}>
+                    <Alert
+                        message="导入说明"
+                        description={
+                            <ul style={{ marginBottom: 0, paddingLeft: 16 }}>
+                                <li>支持 .xlsx, .xls, .csv 格式</li>
+                                <li>文件需包含：学号、姓名、初始密码（至少6位）、班级名称（可选）</li>
+                                <li>如文件中未指定班级，将使用下方选择的默认班级</li>
+                                <li>只能导入到您自己负责的班级</li>
+                            </ul>
+                        }
+                        type="info"
+                        showIcon
+                    />
+                </div>
+
+                <div style={{ marginBottom: 16 }}>
+                    <Button
+                        icon={<DownloadOutlined />}
+                        onClick={handleDownloadTemplate}
+                        type="default"
+                    >
+                        下载导入模板
+                    </Button>
+                </div>
+
+                <Form layout="vertical">
+                    <Form.Item label="选择班级（如文件中未指定，将分配到该班级）">
+                        <Select
+                            placeholder="请选择默认班级"
+                            value={defaultClass}
+                            onChange={setDefaultClass}
+                            allowClear
+                            showSearch
+                            filterOption={(input, option) =>
+                                option.children.toLowerCase().includes(input.toLowerCase())
+                            }
+                        >
+                            {classes.map(c => (
+                                <Select.Option key={c.id} value={c.name}>
+                                    {c.name}
+                                </Select.Option>
+                            ))}
+                        </Select>
+                    </Form.Item>
+
+                    <Form.Item label="上传文件">
+                        <Input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".xlsx,.xls,.csv"
+                            onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                    setImportFile(file);
+                                    setImportResult(null);
+                                }
+                            }}
+                        />
+                        {importFile && (
+                            <div style={{ marginTop: 8, color: '#52c41a' }}>
+                                <FileExcelOutlined /> {importFile.name}
+                            </div>
+                        )}
+                    </Form.Item>
+                </Form>
+
+                {importResult && (
+                    <div style={{ marginBottom: 16, padding: 12, background: '#f5f5f5', borderRadius: 4 }}>
+                        <div style={{ display: 'flex', gap: 24, marginBottom: 8 }}>
+                            <span>
+                                <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                                成功: <strong>{importResult.success_count || 0}</strong> 条
+                            </span>
+                            <span>
+                                <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
+                                失败: <strong>{importResult.failed_count || 0}</strong> 条
+                            </span>
+                        </div>
+                        {importResult.failed && importResult.failed.length > 0 && (
+                            <div style={{ maxHeight: 150, overflow: 'auto', fontSize: 12 }}>
+                                {importResult.failed.map((item, idx) => (
+                                    <div key={idx} style={{ color: '#ff4d4f' }}>
+                                        第 {item.row} 行 ({item.username || '空'}): {item.errors.join('; ')}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <Button onClick={() => {
+                        setImportModalOpen(false);
+                        resetImport();
+                    }}>
+                        取消
+                    </Button>
+                    <Button
+                        type="primary"
+                        icon={<UploadOutlined />}
+                        onClick={handleImport}
+                        loading={importLoading}
+                        disabled={!importFile}
+                    >
+                        开始导入
+                    </Button>
+                </div>
             </Modal>
         </>
     );

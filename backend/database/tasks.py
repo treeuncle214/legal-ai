@@ -15,7 +15,8 @@ def add_task(
     enabled_indicators="", 
     max_submissions=3, 
     allow_after_deadline=0,
-    custom_prompt=None  # 新增：自定义AI评分提示词
+    custom_prompt=None,
+    class_id=None
 ):
     db = SessionLocal()
     try:
@@ -28,7 +29,8 @@ def add_task(
             enabled_indicators=enabled_indicators,
             max_submissions=max_submissions,
             allow_after_deadline=allow_after_deadline,
-            custom_prompt=custom_prompt  # 新增
+            custom_prompt=custom_prompt,
+            class_id=class_id
         )
         db.add(task)
         db.commit()
@@ -47,12 +49,18 @@ def get_task(task_id):
         db.close()
 
 
-def get_all_tasks(include_inactive=False):
+def get_all_tasks(include_inactive=False, class_id=None, teacher_id=None):
     db = SessionLocal()
     try:
         query = db.query(Task)
         if not include_inactive:
             query = query.filter(Task.is_active == 1)
+        if class_id is not None:
+            query = query.filter(Task.class_id == class_id)
+        elif teacher_id is not None:
+            from backend.database.models import Class
+            subquery = db.query(Class.id).filter(Class.teacher_id == teacher_id).subquery()
+            query = query.filter(Task.class_id.in_(subquery))
         tasks = query.order_by(Task.created_at.desc()).all()
         return [t.to_dict() for t in tasks]
     finally:

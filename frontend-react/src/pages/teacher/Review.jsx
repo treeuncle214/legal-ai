@@ -462,6 +462,31 @@ export default function TeacherReview() {
                                 </Panel>
                             )}
                         </Collapse>
+                        {/* ========== 指标评分详情（新增） ========== */}
+                        {currentSub.indicator_scores && Object.keys(currentSub.indicator_scores).length > 0 && (
+                            <>
+                                <Title level={5}>指标评分详情</Title>
+                                <Descriptions column={2} bordered size="small" style={{ marginBottom: 16 }}>
+                                    {Object.entries(currentSub.indicator_scores).map(([key, score]) => (
+                                        <Descriptions.Item key={key} label={key}>
+                                            <span style={{ fontWeight: 'bold' }}>
+                                                {score} 分
+                                            </span>
+                                            {currentSub.indicator_levels && (
+                                                <Tag style={{ marginLeft: 8 }}>
+                                                    {currentSub.indicator_levels[key]}
+                                                </Tag>
+                                            )}
+                                            {currentSub.indicator_comments && currentSub.indicator_comments[key] && (
+                                                <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                                                    {currentSub.indicator_comments[key]}
+                                                </div>
+                                            )}
+                                        </Descriptions.Item>
+                                    ))}
+                                </Descriptions>
+                            </>
+                        )}
 
                         {currentSub.ai_comment && (
                             <>

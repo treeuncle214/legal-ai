@@ -29,6 +29,17 @@ from backend.database.profile import (
     get_student_profile, calculate_profile, get_dimension_scores_history
 )
 from backend.database.migrations import init_db, ensure_task_columns, ensure_submission_columns
+from backend.database.rubric import (
+    create_template, get_template, get_templates_by_teacher,
+    update_template, delete_template, update_template_indicators,
+    share_template_with_teacher, remove_template_share,
+    create_task_rubric_snapshot, get_task_rubric,update_task_rubric_task_id
+)
+from backend.database.term_scores import (
+    calculate_term_score, save_term_score, get_term_score, get_all_term_scores
+)
+
+
 
 __all__ = [
     # 引擎
@@ -55,4 +66,13 @@ __all__ = [
     "get_student_profile", "calculate_profile", "get_dimension_scores_history",
     # 迁移
     "init_db", "ensure_task_columns", "ensure_submission_columns",
+    # 模板操作
+    "create_template", "get_template", "get_templates_by_teacher",
+    "update_template", "delete_template", "update_template_indicators",
+    "share_template_with_teacher", "remove_template_share",
+    "create_task_rubric_snapshot", "get_task_rubric",
+    # 学期总评
+    "calculate_term_score", "save_term_score", "get_term_score", "get_all_term_scores",
+
+
 ]

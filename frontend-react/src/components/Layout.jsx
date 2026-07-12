@@ -61,19 +61,17 @@ export default function Layout({ children, menuItems, title, userInfo, onLogout 
                         onClick={() => setCollapsed(!collapsed)}
                     />
                     <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                        {/* ✅ 只保留一个用户信息显示 */}
                         <span>👤 {userInfo?.display_name || userInfo?.username}</span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                            <span>👤 {userInfo?.display_name || userInfo?.username}</span>
-                            <Button type="text" onClick={() => navigate('/change-password')}>修改密码</Button>
-                            <Button
-                                type="text"
-                                icon={<LogoutOutlined />}
-                                onClick={onLogout}
-                                danger
-                            >
-                                退出登录
-                            </Button>
-                        </div>
+                        <Button type="text" onClick={() => navigate('/change-password')}>修改密码</Button>
+                        <Button
+                            type="text"
+                            icon={<LogoutOutlined />}
+                            onClick={onLogout}
+                            danger
+                        >
+                            退出登录
+                        </Button>
                     </div>
                 </Header>
                 <Content style={{

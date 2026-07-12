@@ -17,11 +17,11 @@ import ScoreSummary from './pages/student/ScoreSummary';
 
 // 教师端页面
 import TeacherLogin from './pages/teacher/Login';
-import TeacherTasks from './pages/teacher/Tasks';
+import TeacherTasks from './pages/teacher/tasks';
 import TeacherReview from './pages/teacher/Review';
 import TeacherScores from './pages/teacher/Scores';
 import TeacherStudentProfile from './pages/teacher/StudentProfile';
-import ClassManagement from './pages/teacher/ClassManagement';
+import ClassManagement from './pages/teacher/class';
 import ClassDetail from './pages/teacher/ClassDetail';
 
 // 图标

@@ -79,3 +79,12 @@ def delete_user(username):
         return False
     finally:
         db.close()
+
+def get_all_teachers():
+    """获取所有教师用户（用于模板共享选择）"""
+    db = SessionLocal()
+    try:
+        teachers = db.query(User).filter(User.role == "teacher").all()
+        return [{"username": t.username, "display_name": t.display_name or t.username} for t in teachers]
+    finally:
+        db.close()

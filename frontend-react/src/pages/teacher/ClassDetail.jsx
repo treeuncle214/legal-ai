@@ -55,10 +55,21 @@ export default function ClassDetail() {
             fetchData();
         } catch (error) {
             console.error('添加学生失败:', error);
+            // ✅ 提取更详细的错误信息
+            let errorMsg = '添加学生失败';
             if (error.response?.data?.detail) {
-                message.error(error.response.data.detail);
+                errorMsg = error.response.data.detail;
+            } else if (error.message) {
+                errorMsg = error.message;
+            }
+            // ✅ 如果是"已在其他班级"的错误，显示更友好的提示
+            if (errorMsg.includes('已在「') && errorMsg.includes('」班级中')) {
+                message.error({
+                    content: errorMsg,
+                    duration: 5,  // 显示时间更长，方便阅读
+                });
             } else {
-                message.error('添加学生失败');
+                message.error(errorMsg);
             }
         } finally {
             setSubmitting(false);

@@ -12,6 +12,8 @@ from backend.api.deps import get_db, get_current_teacher, get_teacher_class_ids
 from backend.database import review_submission, get_submission
 from backend.database.models import Submission
 from backend.database.submissions import publish_submission_score
+from backend.database.tasks import get_task as get_task_db  # ✅ 修复：添加导入
+from backend.database.submissions import get_submissions_by_task_all  # ✅ 添加导入
 from backend.config import SCORING_DIMENSIONS
 from backend.schemas.submission import ReviewRequest
 from backend.schemas.common import Response
@@ -56,8 +58,7 @@ async def publish_batch_scores(
         raise HTTPException(status_code=400, detail="task_id 必须为正整数")
     
     # 验证任务属于当前教师
-    from backend.database.tasks import get_task
-    task = get_task(task_id)
+    task = get_task_db(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
     teacher_class_ids = get_teacher_class_ids(current_user)
@@ -98,8 +99,7 @@ async def review_submission_api(
         raise HTTPException(status_code=404, detail="提交记录不存在")
     
     # 验证提交对应的任务属于当前教师
-    from backend.database.tasks import get_task
-    task = get_task(submission.get("task_id"))
+    task = get_task_db(submission.get("task_id"))
     teacher_class_ids = get_teacher_class_ids(current_user)
     if task and task.get("class_id") not in teacher_class_ids:
         raise HTTPException(status_code=403, detail="无权审批此提交")
@@ -128,8 +128,7 @@ async def publish_score(
         raise HTTPException(status_code=404, detail="提交记录不存在")
     
     # 验证提交对应的任务属于当前教师
-    from backend.database.tasks import get_task
-    task = get_task(submission.get("task_id"))
+    task = get_task_db(submission.get("task_id"))
     teacher_class_ids = get_teacher_class_ids(current_user)
     if task and task.get("class_id") not in teacher_class_ids:
         raise HTTPException(status_code=403, detail="无权发布此成绩")
@@ -153,7 +152,7 @@ async def get_pending_reviews(
 ):
     """获取所有待审批的提交（仅当前教师班级）"""
     from backend.database.engine import get_db_connection
-    from backend.database.tasks import get_task
+    from backend.database.tasks import get_task as get_task_db
     from backend.config import SCORING_DIMENSIONS
     
     teacher_class_ids = get_teacher_class_ids(current_user)
@@ -218,23 +217,73 @@ async def get_pending_reviews(
 
 # ==================== 按任务查看提交 ====================
 
-@router.get("/review/task/{task_id}", response_model=Response[list])
+
+@router.get("/review/task/{task_id}")
 async def get_task_reviews(
     task_id: int,
     current_user: dict = Depends(get_current_teacher),
     db: Session = Depends(get_db)
 ):
-    """获取某任务下所有学生的提交记录（仅最新提交）"""
-    from backend.database import get_submissions_by_task
-    from backend.database.tasks import get_task
-    
-    # 验证任务属于当前教师
-    task = get_task(task_id)
+    """获取任务下每个学生的最新提交（用于审批评分）"""
+    task = get_task_db(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
+    
     teacher_class_ids = get_teacher_class_ids(current_user)
     if task.get("class_id") not in teacher_class_ids:
         raise HTTPException(status_code=403, detail="无权查看此任务")
     
-    submissions = get_submissions_by_task(task_id)
-    return Response(data=submissions)
+    # ✅ 只获取每个学生的最新提交
+    from backend.database.engine import get_db_connection
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT s.*, t.title as task_title
+            FROM submissions s
+            JOIN tasks t ON s.task_id = t.id
+            WHERE s.id IN (
+                SELECT MAX(id)
+                FROM submissions
+                WHERE task_id = ?
+                GROUP BY student_username
+            )
+            ORDER BY s.submit_time DESC
+        """, (task_id,))
+        
+        rows = cursor.fetchall()
+        columns = [description[0] for description in cursor.description]
+        submissions = [dict(zip(columns, row)) for row in rows]
+        
+        # ✅ 为每个提交查询指标级评分
+        from backend.database.models import SubmissionScore
+        from backend.database.engine import SessionLocal
+        
+        db_local = SessionLocal()
+        try:
+            for sub in submissions:
+                scores = db_local.query(SubmissionScore).filter(
+                    SubmissionScore.submission_id == sub["id"]
+                ).all()
+                
+                indicator_scores = {}
+                indicator_levels = {}
+                indicator_comments = {}
+                
+                for s in scores:
+                    # ✅ 只保留有效的指标（A1-A4, B1-B3, C1-C3, D1-D3）
+                    valid_keys = ['A1','A2','A3','A4','B1','B2','B3','C1','C2','C3','D1','D2','D3']
+                    if s.indicator_key in valid_keys:
+                        indicator_scores[s.indicator_key] = s.score
+                        indicator_levels[s.indicator_key] = s.level
+                        indicator_comments[s.indicator_key] = s.comment
+                
+                sub["indicator_scores"] = indicator_scores
+                sub["indicator_levels"] = indicator_levels
+                sub["indicator_comments"] = indicator_comments
+        finally:
+            db_local.close()
+        
+        return submissions
+    finally:
+        conn.close()

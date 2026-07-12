@@ -1,13 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Card, Spin, Empty } from 'antd';
+import { Card, Spin, Empty, Tag, Table, Descriptions, Collapse, Typography } from 'antd';
 import ReactECharts from 'echarts-for-react';
-import { getProfile, getDimensions } from '../../api';
+import { getProfile, getDimensions, getTermScore, getStudentSubmissions } from '../../api';
 import { useNavigate } from 'react-router-dom';
+
+const { Panel } = Collapse;
+const { Text } = Typography;
 
 export default function StudentProfile() {
     const [profile, setProfile] = useState(null);
     const [dimensions, setDimensions] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [termScore, setTermScore] = useState(null);
+    const [submissions, setSubmissions] = useState([]);
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -18,15 +23,16 @@ export default function StudentProfile() {
         }
         const user = JSON.parse(userStr);
 
-        // 获取画像和维度配置
         Promise.all([
             getProfile(user.username),
             getDimensions(),
-        ]).then(([profileData, dimensionsData]) => {
-            console.log('画像数据:', profileData);
-            console.log('维度配置:', dimensionsData);
+            getTermScore(user.username),
+            getStudentSubmissions(user.username)
+        ]).then(([profileData, dimensionsData, termScoreData, submissionsData]) => {
             setProfile(profileData);
             setDimensions(dimensionsData?.dimensions || dimensionsData || []);
+            setTermScore(termScoreData);
+            setSubmissions(submissionsData || []);
         }).catch((err) => {
             console.error('获取画像失败:', err);
         }).finally(() => setLoading(false));
@@ -34,21 +40,20 @@ export default function StudentProfile() {
 
     if (loading) return <Spin size="large" tip="加载中..." style={{ display: 'block', marginTop: 100 }} />;
 
-    // 检查是否有评分数据
-    const hasData = profile && (profile.total_submissions > 0 || profile.task_count > 0 || profile['完成任务数'] > 0 || profile.overall_score > 0);
+    const hasData = profile && (profile.total_submissions > 0 || profile.overall_score > 0);
 
     if (!hasData) {
         return <Empty description="暂无评分数据，请先提交作业" />;
     }
 
-    // 获取维度列表（兼容不同的返回格式）
+    // ========== 获取维度列表 ==========
     const dimensionList = dimensions.length > 0 ? dimensions :
         (profile.dimensions ? Object.keys(profile.dimensions).map(key => ({
             key: key,
             name: profile.dimensions[key]?.name || key,
         })) : []);
 
-    // ECharts 雷达图配置
+    // ========== 雷达图配置 ==========
     const option = {
         radar: {
             indicator: dimensionList.map(d => ({
@@ -57,21 +62,14 @@ export default function StudentProfile() {
             })),
             center: ['50%', '50%'],
             radius: '65%',
-            name: {
-                textStyle: {
-                    fontSize: 12,
-                }
-            },
+            name: { textStyle: { fontSize: 12 } }
         },
         series: [{
             type: 'radar',
             data: [{
                 value: dimensionList.map(d => {
                     const dimKey = d.key || d;
-                    if (profile.dimensions) {
-                        return profile.dimensions[dimKey]?.score || 0;
-                    }
-                    return profile[d.name || d] || 0;
+                    return profile.dimensions?.[dimKey]?.score || 0;
                 }),
                 name: '能力得分',
                 areaStyle: { color: 'rgba(24, 144, 255, 0.3)' },
@@ -81,57 +79,102 @@ export default function StudentProfile() {
         }],
     };
 
-    // 获取各维度得分（兼容不同格式）
-    const getDimensionScore = (dimName, dimKey) => {
-        if (profile.dimensions) {
-            return profile.dimensions[dimKey]?.score || 0;
-        }
-        return profile[dimName] || 0;
+    // ========== 学期总评卡片 ==========
+    const renderTermScore = () => {
+        if (!termScore) return null;
+        return (
+            <Card title="📊 学期总评" style={{ marginBottom: 16 }}>
+                <Descriptions column={2} bordered size="small">
+                    <Descriptions.Item label="课程总成绩">
+                        <span style={{ fontSize: 20, fontWeight: 'bold', color: '#1890ff' }}>
+                            {termScore.course_total_score || 0} 分
+                        </span>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="提交统计">
+                        课堂练习 {termScore.exercise_count || 0} 次 |
+                        任务实践 {termScore.practice_count || 0} 次 |
+                        综合考察 {termScore.final_count || 0} 次
+                    </Descriptions.Item>
+                </Descriptions>
+                <div style={{ marginTop: 12 }}>
+                    {['A_ai_retrieval', 'B_critical', 'C_ethics', 'D_integration'].map((key) => {
+                        const labelMap = {
+                            'A_ai_retrieval': 'A. AI融合智能检索',
+                            'B_critical': 'B. 批判性评估',
+                            'C_ethics': 'C. 伦理合规',
+                            'D_integration': 'D. 信息整合'
+                        };
+                        const score = termScore[`${key}_score`];
+                        const level = termScore[`${key}_level`];
+                        const colorMap = { '优': '#52c41a', '良': '#1890ff', '合格': '#faad14', '不合格': '#ff4d4f' };
+                        return (
+                            <div key={key} style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+                                <span style={{ width: 150 }}>{labelMap[key]}</span>
+                                <span style={{ fontWeight: 'bold', width: 60 }}>{score || 0}分</span>
+                                {level && <Tag color={colorMap[level] || 'default'}>{level}</Tag>}
+                            </div>
+                        );
+                    })}
+                </div>
+            </Card>
+        );
     };
 
-    // 获取各维度提交次数
-    const getDimensionSubmissionCount = (dimKey) => {
-        if (profile.dimensions && profile.dimensions[dimKey]) {
-            return profile.dimensions[dimKey].submission_count || 0;
+    // ========== 各次作业成绩表格 ==========
+    const submissionColumns = [
+        { title: '任务名称', dataIndex: 'task_title', width: 200 },
+        {
+            title: '得分',
+            dataIndex: 'weighted_total',
+            width: 100,
+            render: (val) => <span style={{ fontWeight: 'bold', color: '#1890ff' }}>{val || '-'} 分</span>
+        },
+        {
+            title: '状态',
+            dataIndex: 'is_reviewed',
+            width: 120,
+            render: (val, record) => {
+                if (record.score_published === 1) return <Tag color="green">已发布</Tag>;
+                if (val === 1) return <Tag color="orange">已批改未发布</Tag>;
+                return <Tag color="red">待批改</Tag>;
+            }
+        },
+        {
+            title: '提交时间',
+            dataIndex: 'submit_time',
+            width: 180,
+            render: (text) => text?.replace('T', ' ').substring(0, 19)
         }
-        return 0;
-    };
+    ];
 
     return (
         <div>
-            <Card title="我的能力画像">
+            {/* 学期总评 */}
+            {renderTermScore()}
+
+            {/* 能力雷达图 */}
+            <Card title="能力画像雷达图" style={{ marginBottom: 16 }}>
                 <ReactECharts
                     option={option}
                     style={{ width: '100%', height: 400 }}
                     notMerge
                 />
-                <div style={{ textAlign: 'center', marginTop: 8 }}>
+                <div style={{ textAlign: 'center' }}>
                     <p style={{ fontSize: 16, fontWeight: 'bold' }}>
                         综合得分：{profile.overall_score || 0} 分
                     </p>
-                    {profile.total_submissions !== undefined && (
-                        <div style={{ marginTop: 8, color: '#666' }}>
-                            <p>总提交次数：{profile.total_submissions} 次</p>
-                            <p>平时练习：{profile.exercise_count || 0} 次 | 期末报告：{profile.final_count || 0} 次</p>
-                        </div>
-                    )}
-                    {profile.task_count !== undefined && profile.total_submissions === undefined && (
-                        <p style={{ marginTop: 8, color: '#666' }}>
-                            已完成任务数：{profile.task_count || profile['完成任务数'] || 0}
-                        </p>
-                    )}
+                    <p style={{ color: '#666' }}>总提交次数：{profile.total_submissions || 0} 次</p>
                 </div>
             </Card>
 
-            <Card title="各维度详细得分" style={{ marginTop: 16 }}>
+            {/* 各维度详细得分 */}
+            <Card title="各维度详细得分" style={{ marginBottom: 16 }}>
                 {dimensionList.map(dim => {
                     const dimKey = dim.key || dim;
                     const dimName = dim.name || dim;
-                    const score = getDimensionScore(dimName, dimKey);
+                    const score = profile.dimensions?.[dimKey]?.score || 0;
                     const status = profile.dimensions?.[dimKey]?.status || 'evaluated';
-                    const submissionCount = getDimensionSubmissionCount(dimKey);
-                    const exerciseAvg = profile.dimensions?.[dimKey]?.exercise_avg;
-                    const finalAvg = profile.dimensions?.[dimKey]?.final_avg;
+                    const submissionCount = profile.dimensions?.[dimKey]?.submission_count || 0;
 
                     return (
                         <div key={dimKey} style={{ marginBottom: 16 }}>
@@ -141,12 +184,7 @@ export default function StudentProfile() {
                                     {status === 'pending' ? '待评测' : `${score} 分`}
                                 </span>
                             </div>
-                            <div style={{
-                                height: 8,
-                                background: '#f0f0f0',
-                                borderRadius: 4,
-                                overflow: 'hidden',
-                            }}>
+                            <div style={{ height: 8, background: '#f0f0f0', borderRadius: 4, overflow: 'hidden' }}>
                                 <div style={{
                                     height: '100%',
                                     width: status === 'pending' ? '0%' : `${score}%`,
@@ -158,25 +196,22 @@ export default function StudentProfile() {
                             {status === 'evaluated' && submissionCount > 0 && (
                                 <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
                                     基于 {submissionCount} 次提交计算
-                                    {exerciseAvg !== null && exerciseAvg !== undefined && (
-                                        <span>（平时平均：{exerciseAvg}分</span>
-                                    )}
-                                    {finalAvg !== null && finalAvg !== undefined && (
-                                        <span>，期末平均：{finalAvg}分）</span>
-                                    )}
-                                    {exerciseAvg !== null && exerciseAvg !== undefined && finalAvg === null && (
-                                        <span>）</span>
-                                    )}
-                                </div>
-                            )}
-                            {status === 'pending' && (
-                                <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
-                                    该维度暂未评测，完成更多任务后可获得评分
                                 </div>
                             )}
                         </div>
                     );
                 })}
+            </Card>
+
+            {/* 各次作业成绩列表 */}
+            <Card title="📋 各次作业成绩">
+                <Table
+                    columns={submissionColumns}
+                    dataSource={submissions}
+                    rowKey="id"
+                    pagination={{ pageSize: 10 }}
+                    locale={{ emptyText: '暂无提交记录' }}
+                />
             </Card>
         </div>
     );

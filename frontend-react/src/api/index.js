@@ -1,4 +1,3 @@
-// frontend-react/src/api/index.js
 import { api } from './client';
 
 // ==================== 用户接口 ====================
@@ -18,6 +17,12 @@ export const batchCreateUsers = (users) =>
 export const deleteUser = (username) =>
     api.delete(`/api/users/${username}`);
 
+/**
+ * 获取所有教师列表（用于模板共享选择）
+ */
+export const getTeachers = () =>
+    api.get('/api/teachers');
+
 // ==================== 任务接口 ====================
 
 export const getTasks = () =>
@@ -26,9 +31,8 @@ export const getTasks = () =>
 export const getTaskDetail = (taskId) =>
     api.get(`/api/tasks/${taskId}`);
 
-export const createTask = (title, description, due_date, task_type, enabled_indicators, max_submissions = 3, allow_after_deadline = 0, custom_prompt = null,
-    class_id = null) =>
-    api.post('/api/tasks', { title, description, due_date, task_type, enabled_indicators, max_submissions, allow_after_deadline,class_id });
+export const createTask = (taskData) =>
+    api.post('/api/tasks', taskData);
 
 export const updateTask = (taskId, data) =>
     api.put(`/api/tasks/${taskId}`, data);
@@ -64,17 +68,11 @@ export const getRemainingSubmissions = (taskId) =>
 export const getSubmissionScore = (submissionId) =>
     api.get(`/api/submissions/${submissionId}/score`);
 
-// ==================== 新增：成绩发布与查询接口 ====================
+// ==================== 成绩发布与查询接口 ====================
 
-/**
- * 教师发布成绩
- */
 export const publishScore = (submissionId) =>
     api.post(`/api/review/publish/${submissionId}`);
 
-/**
- * 学生获取已发布的成绩（成绩总结页面）
- */
 export const getPublishedScores = () =>
     api.get('/api/submissions/published');
 
@@ -89,15 +87,9 @@ export const getPendingReviews = () =>
 export const getStudentSubmissionsHistory = (username) =>
     api.get(`/api/profile/${username}/submissions`);
 
-/**
- * 获取某任务下的所有提交（含已批改和待批改）
- */
 export const getTaskReviews = (taskId) =>
     api.get(`/api/review/task/${taskId}`);
 
-/**
- * 批量发布成绩
- */
 export const publishBatchScores = (taskId) =>
     api.post('/api/review/publish_batch', { task_id: taskId });
 
@@ -121,52 +113,140 @@ export const getDimensions = () =>
 
 // ==================== 班级管理接口 ====================
 
-/**
- * 获取当前教师的所有班级
- */
 export const getClasses = () =>
     api.get('/api/classes');
 
 /**
- * 创建班级
+ * 创建班级（支持 admin 指定负责人）
+ * @param {string} name - 班级名称
+ * @param {string} teacherUsername - 负责教师用户名（仅 admin 可指定）
  */
-export const createClass = (name) =>
-    api.post('/api/classes', null, { params: { name } });
+export const createClass = (name, teacherUsername) => {
+    const params = new URLSearchParams();
+    params.append('name', name);
+    if (teacherUsername) {
+        params.append('teacher_username', teacherUsername);
+    }
+    return api.post('/api/classes', null, { params });
+};
 
-/**
- * 获取班级学生列表
- */
 export const getClassStudents = (classId) =>
     api.get(`/api/classes/${classId}/students`);
 
-/**
- * 向班级添加学生
- */
 export const addStudentToClass = (classId, username) =>
     api.post(`/api/classes/${classId}/students`, null, { params: { username } });
 
-/**
- * 从班级移除学生
- */
 export const removeStudentFromClass = (classId, username) =>
     api.delete(`/api/classes/${classId}/students/${username}`);
 
-/**
- * 删除班级
- */
 export const deleteClass = (classId) =>
     api.delete(`/api/classes/${classId}`);
 
-// ==================== 修改密码接口 ====================
+/**
+ * 获取所有教师列表（用于 admin 创建班级时选择负责人）
+ */
+export const getTeachersForClass = () =>
+    api.get('/api/classes/teachers');
 
 /**
- * 修改当前用户密码
+ * 批量导入学生
+ * @param {FormData} formData - 包含 'file' 和 'default_class_name'
  */
+export const batchImportStudents = (formData) =>
+    api.upload('/api/users/batch-import', formData);
+
+// ==================== 修改密码接口 ====================
+
 export const changePassword = (oldPassword, newPassword) =>
     api.put('/api/users/password', { old_password: oldPassword, new_password: newPassword });
 
+// ==================== 评分模板接口 ====================
 
+/**
+ * 获取当前教师的所有模板（含共享给自己的）
+ */
+export const getTemplates = () =>
+    api.get('/api/rubric/templates');
+
+/**
+ * 获取模板详情
+ */
+export const getTemplateDetail = (templateId) =>
+    api.get(`/api/rubric/templates/${templateId}`);
+
+/**
+ * 创建评分模板
+ * @param {Object} data - 模板数据
+ * @param {string} data.name - 模板名称
+ * @param {string} data.description - 模板描述
+ * @param {string} data.task_type - 适用任务类型
+ * @param {string} data.overall_prompt - 作业级提示词
+ * @param {string} data.share_type - private / shared / public
+ * @param {Array} data.indicators - 指标列表 [{indicator_key, max_score, prompt}]
+ * @param {Array} data.share_targets - 共享目标教师用户名列表（share_type=shared时必填）
+ */
+export const createTemplate = (data) =>
+    api.post('/api/rubric/templates', data);
+
+/**
+ * 更新评分模板
+ */
+export const updateTemplate = (templateId, data) =>
+    api.put(`/api/rubric/templates/${templateId}`, data);
+
+/**
+ * 删除评分模板
+ */
+export const deleteTemplate = (templateId) =>
+    api.delete(`/api/rubric/templates/${templateId}`);
+
+/**
+ * 共享模板给其他教师
+ */
+export const shareTemplate = (templateId, teacherUsername) =>
+    api.post(`/api/rubric/templates/${templateId}/share`, { teacher_username: teacherUsername });
+
+/**
+ * 取消共享模板
+ */
+export const unshareTemplate = (templateId, teacherUsername) =>
+    api.delete(`/api/rubric/templates/${templateId}/share/${teacherUsername}`);
+
+// ==================== 学期总评接口 ====================
+
+/**
+ * 获取学生的学期总评
+ */
+export const getTermScore = (username) =>
+    api.get(`/api/term/scores/${username}`);
+
+/**
+ * 生成全班学期总评
+ * @param {number} classId - 班级ID
+ */
+export const generateTermScores = (classId) =>
+    api.post(`/api/term/scores/generate?class_id=${classId}`);
+
+/**
+ * 获取全班学期总评列表
+ */
+export const getClassTermScores = (classId) =>
+    api.get(`/api/term/scores/class/${classId}`);
+
+/**
+ * 重新计算单个学生学期总评
+ */
+export const regenerateTermScore = (username) =>
+    api.post(`/api/term/scores/regenerate/${username}`);
+
+/**
+ * 更新学期总评的教师点评
+ */
+export const updateTermSummary = (username, summary) =>
+    api.put(`/api/term/scores/${username}/summary`, { teacher_summary: summary });
+
+// ==================== 导出所有接口 ====================
 
 export { api };
-export default api;
 
+export default api;

@@ -106,3 +106,24 @@ class PublishResponse(BaseModel):
     submission_id: int
     published: bool
     message: str
+
+
+class IndicatorScoreDetail(BaseModel):
+    """单个指标的评分详情"""
+    indicator_key: str
+    score: float
+    level: str
+    comment: Optional[str] = None
+
+
+class SubmissionScoreDetailResponse(BaseModel):
+    """提交评分详情响应"""
+    submission_id: int
+    task_title: str
+    total_score: float
+    dimension_scores: Dict[str, float]
+    dimension_levels: Dict[str, str]
+    indicator_scores: List[IndicatorScoreDetail]
+    ai_comment: str
+    teacher_comment: Optional[str] = None
+    score_published: int

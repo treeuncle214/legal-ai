@@ -30,6 +30,10 @@ from backend.core.scorer import score_submission
 from backend.schemas.submission import TextSubmissionRequest
 from backend.schemas.common import Response as APIResponse
 from backend.config import UPLOAD_DIR
+from backend.database.models import SubmissionScore
+from backend.database.engine import SessionLocal
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -74,11 +78,16 @@ async def options_submissions_word():
 
 
 # ========== AI 评分异步任务 ==========
+# backend/api/submissions.py
+# 修改 perform_scoring 函数
+
 async def perform_scoring(submission_id: int, task_dict: dict, content: str, submit_type: str):
     try:
         logger.info(f"开始为提交 {submission_id} 进行AI评分")
         update_ai_score_status(submission_id, "scoring")
         score_result = score_submission(task_dict, {"final_output": content, "submit_type": submit_type})
+        
+        # 准备评分数据
         scores_dict = {
             "score_ai_retrieval": score_result["dimension_scores"].get("ai_retrieval", 0),
             "score_critical": score_result["dimension_scores"].get("critical", 0),
@@ -89,11 +98,41 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
             "ai_score_detail": score_result.get("indicator_grades", {}) if "indicator_grades" in score_result else score_result.get("module_scores", {})
         }
         update_scores(submission_id, scores_dict)
+        
+        # ========== 新增：存储每个指标的评分详情 ==========
+        try:
+            from backend.database.models import SubmissionScore
+            from backend.database.engine import SessionLocal
+            
+            db = SessionLocal()
+            try:
+                # 获取指标得分（从 score_result 中提取）
+                indicator_scores = score_result.get("indicator_scores", {})
+                indicator_levels = score_result.get("indicator_levels", {})
+                indicator_comments = score_result.get("indicator_comments", {})
+                
+                for key, score in indicator_scores.items():
+                    indicator_score = SubmissionScore(
+                        submission_id=submission_id,
+                        indicator_key=key,
+                        score=score,
+                        level=indicator_levels.get(key, "合格"),
+                        comment=indicator_comments.get(key, "")
+                    )
+                    db.add(indicator_score)
+                db.commit()
+                logger.info(f"提交 {submission_id} 指标评分详情已保存")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"保存指标评分详情失败: {e}")
+        
         logger.info(f"提交 {submission_id} AI评分完成")
     except Exception as e:
         logger.error(f"提交 {submission_id} AI评分失败: {str(e)}", exc_info=True)
         update_ai_score_status(submission_id, "failed", error_message=str(e))
         update_scores(submission_id, {"ai_comment": "AI评分失败，请教师手动批改", "ai_score_status": "failed"})
+
 
 
 # ========== 文本提交（保留，但前端已不再使用） ==========
@@ -213,6 +252,9 @@ async def submit_word(
         raise HTTPException(status_code=400, detail=check_message)
 
     # 保存文件
+    original_name1 = file1.filename
+    original_name2 = file2.filename
+    
     unique1 = f"{uuid.uuid4().hex}.docx"
     unique2 = f"{uuid.uuid4().hex}.docx"
     path1 = os.path.join(UPLOAD_DIR, unique1)
@@ -225,6 +267,9 @@ async def submit_word(
     # 合并内容给AI
     combined = f"【检索过程记录】\n{process_log_text}\n\n【最终检索结果】\n{final_output_text}"
 
+    # 保存原始文件名（逗号分隔，与存储文件顺序一致）
+    original_filenames = f"{original_name1},{original_name2}"
+
     # 插入数据库，状态 pending
     submission_id = add_submission(
         task_id=task_id,
@@ -234,7 +279,8 @@ async def submit_word(
         submit_type="word",
         word_file_path=f"{unique1},{unique2}",
         word_content=combined,
-        ai_score_status="pending"
+        ai_score_status="pending",
+        original_filenames=original_filenames  # 新增：保存原始文件名
     )
 
     # 异步执行AI评分
@@ -252,7 +298,6 @@ async def submit_word(
         data={"submission_id": submission_id, "message": "提交成功，等待教师批改"},
         message="提交成功！请等待教师批改后查看成绩"
     )
-
 
 # ========== 其余查询接口 ==========
 @router.get("/submissions/{submission_id}/score")
@@ -373,8 +418,43 @@ async def get_submission_detail(
         if task and task.get("class_id") not in teacher_class_ids:
             raise HTTPException(status_code=403, detail="无权查看此提交")
     
+    # ✅ 新增：查询指标级评分
+    from backend.database.models import SubmissionScore
+    from backend.database.engine import SessionLocal
+    from backend.config import SCORING_DIMENSIONS
+    
+    # 获取所有13个指标名称映射
+    indicator_names = {}
+    for dim in SCORING_DIMENSIONS:
+        for ind in dim.get("sub_indicators", []):
+            indicator_names[ind["key"]] = ind["name"]
+    
+    # 查询该提交的指标评分
+    db_local = SessionLocal()
+    try:
+        scores = db_local.query(SubmissionScore).filter(
+            SubmissionScore.submission_id == submission_id
+        ).all()
+        
+        indicator_scores = {}
+        indicator_levels = {}
+        indicator_comments = {}
+        
+        for s in scores:
+            indicator_scores[s.indicator_key] = s.score
+            indicator_levels[s.indicator_key] = s.level
+            indicator_comments[s.indicator_key] = s.comment
+        
+        # 添加到返回数据
+        submission["indicator_scores"] = indicator_scores
+        submission["indicator_levels"] = indicator_levels
+        submission["indicator_comments"] = indicator_comments
+        submission["indicator_names"] = indicator_names
+        
+    finally:
+        db_local.close()
+    
     return APIResponse(data=submission)
-
 
 @router.get("/submissions/remaining/{task_id}")
 async def get_remaining_submissions(
@@ -419,11 +499,38 @@ async def download_file(
 ):
     if '..' in filename or filename.startswith('/'):
         raise HTTPException(status_code=400, detail="无效的文件名")
+    
     file_path = os.path.join(UPLOAD_DIR, filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail=f"文件不存在: {filename}")
+    
+    print(f"📥 下载请求: {filename}")
+    
+    # 查询数据库获取原始文件名
+    from backend.database.submissions import get_submission_by_file_path
+    submission = get_submission_by_file_path(filename)
+    print(f"📊 查询结果: {submission}")
+    
+    original_filename = filename
+    
+    if submission and submission.get("original_filenames"):
+        stored_files = submission["word_file_path"].split(',')
+        original_files = submission["original_filenames"].split(',')
+        print(f"📂 stored_files: {stored_files}")
+        print(f"📂 original_files: {original_files}")
+        
+        if filename in stored_files:
+            idx = stored_files.index(filename)
+            if idx < len(original_files):
+                original_filename = original_files[idx].strip()
+                print(f"✅ 使用原始文件名: {original_filename}")
+        else:
+            print(f"⚠️ 文件名 {filename} 不在 stored_files 中")
+    else:
+        print(f"⚠️ 未找到 original_filenames")
+    
     return FileResponse(
         file_path,
-        filename=filename,
+        filename=original_filename,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
