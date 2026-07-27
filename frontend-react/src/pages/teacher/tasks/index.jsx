@@ -2,7 +2,8 @@
 import { useState, useEffect } from 'react';
 import { Button, Form, message } from 'antd';
 import { PlusOutlined, SaveOutlined } from '@ant-design/icons';
-import { getTasks, createTask, updateTask, deleteTask, getClasses, getDimensions } from '@/api';
+import { getTasks, createTask, updateTask, deleteTask, getClasses, getDimensions, copyTemplate } from '@/api';
+import { api } from '@/api/client';
 import dayjs from 'dayjs';
 
 import { useTemplates } from './hooks/useTemplates';
@@ -128,6 +129,7 @@ export default function TeacherTasks() {
         fetchTasks();
         fetchClasses();
         fetchDimensions();
+        fetchTemplates();
     }, []);
 
     // ========== 任务操作 ==========
@@ -149,53 +151,48 @@ export default function TeacherTasks() {
     };
 
     const handleEditTask = (record) => {
+        console.log('📝 编辑任务:', record);
         setEditingTask(record);
         setTaskType(record.task_type || '任务实践');
-        const enabled = record.enabled_indicators?.split(',').filter(s => s) || [];
-        taskForm.setFieldsValue({
-            title: record.title,
-            description: record.description,
-            due_date: record.due_date ? dayjs(record.due_date) : null,
-            task_type: record.task_type || '任务实践',
-            enabled_indicators: enabled,
-            custom_prompt: record.custom_prompt || '',
-            class_id: record.class_id,
-            weight: record.weight || 5,
-            max_submissions: record.max_submissions || 3,
-            allow_after_deadline: record.allow_after_deadline || 0
-        });
         setSelectedTemplateId(record.rubric_template_id || null);
         setTaskModalOpen(true);
     };
 
-    const handleSubmitTask = async () => {
-        const values = await taskForm.validateFields();
+    const handleSubmitTask = async (values) => {
         try {
-            const enabledStr = values.enabled_indicators?.join(',') || '';
-            const taskData = {
-                title: values.title,
-                description: values.description,
-                due_date: values.due_date?.format('YYYY-MM-DD'),
-                task_type: values.task_type,
-                enabled_indicators: enabledStr,
-                custom_prompt: values.custom_prompt || null,
-                class_id: values.class_id,
-                weight: values.weight || 5,
-                max_submissions: values.max_submissions || 3,
-                allow_after_deadline: values.allow_after_deadline || 0,
-                rubric_template_id: selectedTemplateId || null
-            };
-
-            if (editingTask) {
-                await updateTask(editingTask.id, taskData);
-                message.success('任务已更新');
+            if (values instanceof FormData) {
+                const response = await api.upload('/api/tasks', values);
+                message.success(editingTask ? '任务已更新' : '任务已发布');
+                setTaskModalOpen(false);
+                fetchTasks();
             } else {
-                await createTask(taskData);
-                message.success('任务已发布');
+                const enabledStr = values.enabled_indicators?.join(',') || '';
+                const taskData = {
+                    title: values.title,
+                    description: values.description,
+                    due_date: values.due_date?.format('YYYY-MM-DD'),
+                    task_type: values.task_type,
+                    enabled_indicators: enabledStr,
+                    custom_prompt: values.custom_prompt || null,
+                    class_id: values.class_id,
+                    weight: values.weight || 5,
+                    max_submissions: values.max_submissions || 3,
+                    allow_after_deadline: values.allow_after_deadline || 0,
+                    rubric_template_id: selectedTemplateId || null
+                };
+
+                if (editingTask) {
+                    await updateTask(editingTask.id, taskData);
+                    message.success('任务已更新');
+                } else {
+                    await createTask(taskData);
+                    message.success('任务已发布');
+                }
+                setTaskModalOpen(false);
+                fetchTasks();
             }
-            setTaskModalOpen(false);
-            fetchTasks();
         } catch (error) {
+            console.error('操作失败:', error);
             message.error('操作失败: ' + (error.response?.data?.detail || error.message));
         }
     };
@@ -315,25 +312,15 @@ export default function TeacherTasks() {
         fetchTemplates();
     };
 
+    // ✅ 复制模板 - 调用后端复制接口
     const handleCopyTemplate = async (template) => {
         try {
-            const indicatorsData = (template.indicators || []).map(ind => ({
-                indicator_key: ind.indicator_key,
-                max_score: ind.max_score || 10,
-                prompt: ind.prompt || ''
-            }));
-            await createTemplateApi({
-                name: `${template.name}(副本)`,
-                description: template.description || `复制自 ${template.created_by} 的模板`,
-                task_type: template.task_type,
-                overall_prompt: template.overall_prompt || '',
-                share_type: 'private',
-                indicators: indicatorsData
-            });
-            message.success('模板复制成功');
+            const result = await copyTemplate(template.id);
+            message.success('模板复制成功，已保存到您的模板库');
             fetchTemplates();
         } catch (error) {
-            message.error('复制失败: ' + (error.response?.data?.detail || error.message));
+            console.error('复制模板失败:', error);
+            message.error(error.response?.data?.detail || '复制模板失败');
         }
     };
 

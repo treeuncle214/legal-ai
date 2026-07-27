@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Table, Tag, Button, message } from 'antd';
+import { Table, Tag, Button, message, Tooltip } from 'antd';
 import { useNavigate } from 'react-router-dom';
-import { getTasks } from '../../api';
+import { DownloadOutlined } from '@ant-design/icons';
+import { getTasks, downloadTaskAttachment } from '../../api';
 import dayjs from 'dayjs';
 
 export default function StudentTasks() {
@@ -12,7 +13,6 @@ export default function StudentTasks() {
     const fetchTasks = async () => {
         setLoading(true);
         try {
-            // 修复：getTasks() 直接返回任务数组
             const tasksData = await getTasks();
             setTasks(tasksData || []);
         } catch (err) {
@@ -27,12 +27,22 @@ export default function StudentTasks() {
         fetchTasks();
     }, []);
 
+    const handleDownloadAttachment = async (taskId, filename) => {
+        try {
+            await downloadTaskAttachment(taskId);
+            message.success(`开始下载: ${filename || '模板'}`);
+        } catch (error) {
+            console.error('下载失败:', error);
+            message.error('下载失败，请重试');
+        }
+    };
+
     const columns = [
         {
             title: '任务名称',
             dataIndex: 'title',
             key: 'title',
-            width: 250,
+            width: 200,
         },
         {
             title: '截止时间',
@@ -59,8 +69,31 @@ export default function StudentTasks() {
             },
         },
         {
+            title: '模板附件',
+            key: 'attachment',
+            width: 120,
+            render: (_, record) => {
+                if (record.has_attachment) {
+                    return (
+                        <Tooltip title={`下载 ${record.attachment_filename || '模板'}`}>
+                            <Button
+                                type="link"
+                                icon={<DownloadOutlined />}
+                                size="small"
+                                onClick={() => handleDownloadAttachment(record.id, record.attachment_filename)}
+                            >
+                                下载模板
+                            </Button>
+                        </Tooltip>
+                    );
+                }
+                return <span style={{ color: '#ccc' }}>无</span>;
+            },
+        },
+        {
             title: '操作',
             key: 'action',
+            width: 120,
             render: (_, record) => (
                 <Button
                     type="primary"

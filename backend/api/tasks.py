@@ -1,9 +1,11 @@
-# backend/api/tasks.py
 """
 任务管理 API
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+import os
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from backend.api.deps import get_db, get_current_teacher, get_current_user, get_student_class_id, get_teacher_class_ids
@@ -11,6 +13,7 @@ from backend.database import add_task, get_task, get_all_tasks, update_task, del
 from backend.schemas.task import TaskCreate, TaskUpdate, TaskResponse
 from backend.schemas.common import Response
 from backend.database.rubric import get_template, create_task_rubric_snapshot, update_task_rubric_task_id
+from backend.config import UPLOAD_DIR
 
 router = APIRouter(prefix="/api", tags=["任务管理"])
 
@@ -20,10 +23,7 @@ async def get_tasks(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取任务列表
-    - 学生：只显示自己班级的任务
-    - 教师/admin：显示自己负责班级的任务（admin显示全部）
-    """
+    """获取任务列表"""
     from backend.database.tasks import get_all_tasks as get_tasks_db
     from backend.api.deps import get_student_class_id, get_teacher_class_ids
     
@@ -50,7 +50,6 @@ async def get_tasks(
                             seen.add(t["id"])
                             tasks.append(t)
         
-        # ✅ 为每个任务补充模板指标信息
         for task in tasks:
             template_id = task.get("rubric_template_id")
             if template_id:
@@ -90,7 +89,6 @@ async def get_task_detail(
         if task.get("class_id") not in teacher_class_ids:
             raise HTTPException(status_code=403, detail="无权查看此任务")
     
-    # ✅ 补充模板指标信息
     template_id = task.get("rubric_template_id")
     if template_id:
         template = get_template(template_id)
@@ -104,16 +102,27 @@ async def get_task_detail(
     return Response(data=task)
 
 
-
 @router.post("/tasks", response_model=Response)
 async def create_task(
-    task_data: TaskCreate,
+    title: str = Form(...),
+    description: str = Form(None),
+    due_date: str = Form(None),
+    task_type: str = Form("任务实践"),
+    enabled_indicators: str = Form(""),
+    custom_prompt: str = Form(None),
+    class_id: int = Form(...),
+    max_submissions: int = Form(3),
+    allow_after_deadline: int = Form(0),
+    rubric_template_id: int = Form(None),
+    rubric_config: str = Form(None),
+    weight: int = Form(5),
+    attachment: UploadFile = File(None),  # ✅ 新增
     current_user: dict = Depends(get_current_teacher),
     db: Session = Depends(get_db)
 ):
-    """发布新任务（教师专用）"""
+    """发布新任务（教师专用），支持上传附件"""
+    
     # 验证 class_id
-    class_id = task_data.class_id
     if not class_id:
         raise HTTPException(status_code=400, detail="请选择所属班级")
     
@@ -121,100 +130,137 @@ async def create_task(
     if class_id not in teacher_class_ids:
         raise HTTPException(status_code=403, detail="无权为其他班级创建任务")
     
-    # ✅ 如果选择了模板，从模板中提取指标列表
-    enabled_indicators_str = task_data.enabled_indicators or ""
-    rubric_template_id = task_data.rubric_template_id
-    
+    # 获取模板信息
+    rubric_template_id = int(rubric_template_id) if rubric_template_id else None
+    template = None
     if rubric_template_id:
-        template = get_template(rubric_template_id)
-        if template:
-            # ✅ 从模板中提取所有指标 key，覆盖 enabled_indicators
-            indicator_keys = [ind["indicator_key"] for ind in template.get("indicators", [])]
-            enabled_indicators_str = ",".join(indicator_keys)
-            print(f"📋 从模板提取指标: {enabled_indicators_str}")
-    
-    # ========== 创建评分配置快照 ==========
-    rubric_id = None
-    if rubric_template_id:
-        # 使用已有模板
         template = get_template(rubric_template_id)
         if not template:
             raise HTTPException(status_code=404, detail="评分模板不存在")
-        
-        # 从模板复制到任务快照
-        indicators = []
-        for ind in template.get("indicators", []):
-            indicators.append({
-                "indicator_key": ind["indicator_key"],
-                "max_score": ind["max_score"],
-                "prompt": ind.get("prompt")
-            })
-        
-        rubric_id = create_task_rubric_snapshot(
-            task_id=None,
-            template_id=rubric_template_id,
-            overall_prompt=template.get("overall_prompt"),
-            indicators=indicators
-        )
-    elif task_data.rubric_config:
-        # 使用临时配置
-        indicators = []
-        for ind in task_data.rubric_config.get("indicators", []):
-            indicators.append({
-                "indicator_key": ind["indicator_key"],
-                "max_score": ind["max_score"],
-                "prompt": ind.get("prompt")
-            })
-        
-        rubric_id = create_task_rubric_snapshot(
-            task_id=None,
-            template_id=None,
-            overall_prompt=task_data.rubric_config.get("overall_prompt"),
-            indicators=indicators
-        )
-    else:
-        # 兼容旧版：从 enabled_indicators 生成默认配置
-        enabled_indicators = [s.strip() for s in enabled_indicators_str.split(',') if s.strip()]
-        indicators = []
-        from backend.config import SCORING_DIMENSIONS
-        for dim in SCORING_DIMENSIONS:
-            for ind in dim.get("sub_indicators", []):
-                if ind["key"] in enabled_indicators:
-                    indicators.append({
-                        "indicator_key": ind["key"],
-                        "max_score": 10,
-                        "prompt": None
-                    })
-        
-        if indicators:
-            rubric_id = create_task_rubric_snapshot(
-                task_id=None,
-                template_id=None,
-                overall_prompt=task_data.custom_prompt,
-                indicators=indicators
-            )
     
-    # ========== 创建任务 ==========
+    # ========== 1. 从模板提取指标列表 ==========
+    indicators_from_template = []
+    if template:
+        for ind in template.get("indicators", []):
+            indicators_from_template.append({
+                "indicator_key": ind["indicator_key"],
+                "max_score": ind["max_score"],
+                "prompt": ind.get("prompt")
+            })
+        enabled_indicators_str = ",".join([ind["indicator_key"] for ind in indicators_from_template])
+        print(f"📋 从模板提取指标: {enabled_indicators_str}")
+    else:
+        enabled_indicators_str = enabled_indicators or ""
+        if rubric_config:
+            import json
+            try:
+                config = json.loads(rubric_config)
+                for ind in config.get("indicators", []):
+                    indicators_from_template.append({
+                        "indicator_key": ind["indicator_key"],
+                        "max_score": ind.get("max_score", 10),
+                        "prompt": ind.get("prompt")
+                    })
+                enabled_indicators_str = ",".join([ind["indicator_key"] for ind in indicators_from_template])
+            except:
+                pass
+    
+    # ========== 2. 保存附件 ==========
+    attachment_path = None
+    attachment_filename = None
+    if attachment:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        ext = os.path.splitext(attachment.filename)[1] if attachment.filename else ".docx"
+        unique_name = f"{uuid.uuid4().hex}{ext}"
+        file_path = os.path.join(UPLOAD_DIR, unique_name)
+        content = await attachment.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+        attachment_path = unique_name
+        attachment_filename = attachment.filename
+        print(f"📎 附件已保存: {attachment_filename} -> {attachment_path}")
+    
+    # ========== 3. 创建任务 ==========
     task_id = add_task(
-        title=task_data.title,
-        description=task_data.description,
-        due_date=task_data.due_date,
+        title=title,
+        description=description,
+        due_date=due_date,
         created_by=current_user["username"],
-        task_type=task_data.task_type,
-        enabled_indicators=enabled_indicators_str,  # ✅ 使用从模板提取的指标
-        custom_prompt=task_data.custom_prompt,
+        task_type=task_type,
+        enabled_indicators=enabled_indicators_str,
+        custom_prompt=custom_prompt,
         class_id=class_id,
-        max_submissions=task_data.max_submissions,
-        allow_after_deadline=task_data.allow_after_deadline
+        max_submissions=max_submissions,
+        allow_after_deadline=allow_after_deadline,
+        rubric_template_id=rubric_template_id,
+        attachment_path=attachment_path,        # ✅ 新增
+        attachment_filename=attachment_filename  # ✅ 新增
     )
     
-    # 更新评分配置的 task_id
+    # ========== 4. 创建评分配置快照 ==========
+    rubric_id = None
+    
+    if template:
+        rubric_id = create_task_rubric_snapshot(
+            task_id=task_id,
+            template_id=rubric_template_id,
+            overall_prompt=template.get("overall_prompt"),
+            indicators=indicators_from_template
+        )
+        print(f"✅ 从模板创建快照: rubric_id={rubric_id}")
+    elif indicators_from_template:
+        rubric_id = create_task_rubric_snapshot(
+            task_id=task_id,
+            template_id=None,
+            overall_prompt=custom_prompt,
+            indicators=indicators_from_template
+        )
+        print(f"✅ 从临时配置创建快照: rubric_id={rubric_id}")
+    
     if rubric_id:
-        from backend.database.rubric import update_task_rubric_task_id
         update_task_rubric_task_id(rubric_id, task_id)
-        update_task(task_id, rubric_template_id=rubric_template_id)
+        update_task(task_id, task_rubric_id=rubric_id)
+        print(f"✅ 任务 {task_id} 已关联 rubric_id={rubric_id}")
     
     return Response(data={"id": task_id}, message="任务发布成功")
+
+
+@router.get("/tasks/{task_id}/attachment")
+async def download_task_attachment(
+    task_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """✅ 下载任务附件（学生和教师均可下载）"""
+    task = get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    
+    # 权限检查
+    if current_user["role"] == "student":
+        student_class_id = get_student_class_id(current_user)
+        if task.get("class_id") != student_class_id:
+            raise HTTPException(status_code=403, detail="无权下载此附件")
+    else:
+        teacher_class_ids = get_teacher_class_ids(current_user)
+        if task.get("class_id") not in teacher_class_ids:
+            raise HTTPException(status_code=403, detail="无权下载此附件")
+    
+    attachment_path = task.get("attachment_path")
+    attachment_filename = task.get("attachment_filename")
+    
+    if not attachment_path:
+        raise HTTPException(status_code=404, detail="该任务没有附件")
+    
+    file_path = os.path.join(UPLOAD_DIR, attachment_path)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="附件文件不存在")
+    
+    return FileResponse(
+        file_path,
+        filename=attachment_filename or attachment_path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
 
 
 @router.put("/tasks/{task_id}", response_model=Response)

@@ -13,7 +13,8 @@ def build_exercise_prompt(
     task: Dict,
     submission: Dict,
     enabled_indicators: List[str],
-    indicator_prompts: Dict[str, str] = None
+    indicator_prompts: Dict[str, str] = None,
+    indicator_max_scores: Dict[str, int] = None  # ✅ 新增参数
 ) -> str:
     """
     构建平时练习评分 Prompt
@@ -27,14 +28,15 @@ def build_exercise_prompt(
     ai_interaction_log = submission.get("ai_interaction_log", "无记录")
     final_output = submission.get("final_output", "无内容")
     
-    # 构建启用指标列表
+    # ✅ 构建启用指标列表（含满分信息，供AI参考）
     indicator_list = []
     for key in enabled_indicators:
         name = INDICATOR_NAMES.get(key, key)
+        max_score = indicator_max_scores.get(key, 10) if indicator_max_scores else 10
         prompt = ""
         if indicator_prompts and key in indicator_prompts:
             prompt = f"\n   评分关注点：{indicator_prompts[key]}"
-        indicator_list.append(f"  - {key} {name}{prompt}")
+        indicator_list.append(f"  - {key} {name}（满分 {max_score} 分）{prompt}")
     
     indicators_text = "\n".join(indicator_list) if indicator_list else "  全部13个指标"
     

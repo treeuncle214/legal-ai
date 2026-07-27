@@ -8,14 +8,16 @@ from backend.database.engine import SessionLocal
 from backend.database.models import User
 
 
-def add_user(username, password, role="student", display_name=None):
+def add_user(username, password, role="student", display_name=None, college="", major=""):
     db = SessionLocal()
     try:
         user = User(
             username=username,
             password=password,
             role=role,
-            display_name=display_name or username
+            display_name=display_name or username,
+            college=college or "",  # ✅ 新增
+            major=major or ""       # ✅ 新增
         )
         db.add(user)
         db.commit()
@@ -79,6 +81,7 @@ def delete_user(username):
         return False
     finally:
         db.close()
+
 
 def get_all_teachers():
     """获取所有教师用户（用于模板共享选择）"""

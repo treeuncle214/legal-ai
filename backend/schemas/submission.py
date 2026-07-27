@@ -1,4 +1,3 @@
-# backend/schemas/submission.py
 """
 提交相关的 Pydantic 模型
 """
@@ -27,6 +26,7 @@ class ReviewRequest(BaseModel):
     """审批请求"""
     scores: Dict[str, float]  # {"ai_retrieval": 85, "critical": 78, ...}
     teacher_comment: str = ""
+    indicator_scores: Optional[Dict[str, float]] = {}  # ✅ 新增：修改后的指标分数
 
 
 class ScoreResult(BaseModel):

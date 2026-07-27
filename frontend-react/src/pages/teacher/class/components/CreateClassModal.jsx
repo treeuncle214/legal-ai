@@ -1,4 +1,3 @@
-// frontend-react/src/pages/teacher/class/components/CreateClassModal.jsx
 import { Modal, Input, Form, Select } from 'antd';
 
 export function CreateClassModal({

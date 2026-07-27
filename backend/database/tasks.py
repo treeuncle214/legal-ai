@@ -16,7 +16,11 @@ def add_task(
     max_submissions=3, 
     allow_after_deadline=0,
     custom_prompt=None,
-    class_id=None
+    class_id=None,
+    rubric_template_id=None,
+    task_rubric_id=None,
+    attachment_path=None,      # ✅ 新增
+    attachment_filename=None   # ✅ 新增
 ):
     db = SessionLocal()
     try:
@@ -30,7 +34,11 @@ def add_task(
             max_submissions=max_submissions,
             allow_after_deadline=allow_after_deadline,
             custom_prompt=custom_prompt,
-            class_id=class_id
+            class_id=class_id,
+            rubric_template_id=rubric_template_id,
+            task_rubric_id=task_rubric_id,
+            attachment_path=attachment_path,        # ✅ 新增
+            attachment_filename=attachment_filename  # ✅ 新增
         )
         db.add(task)
         db.commit()
@@ -70,7 +78,7 @@ def get_all_tasks(include_inactive=False, class_id=None, teacher_id=None):
 def update_task(task_id, **kwargs):
     """
     支持更新：title, description, due_date, is_active, task_type, 
-    enabled_indicators, max_submissions, allow_after_deadline, custom_prompt
+    enabled_indicators, max_submissions, allow_after_deadline, custom_prompt, rubric_template_id
     """
     db = SessionLocal()
     try:

@@ -1,6 +1,6 @@
 // frontend-react/src/pages/teacher/class/index.jsx
 import { useState } from 'react';
-import { Tabs, Button, Space } from 'antd';
+import { Tabs, Button, Space, message } from 'antd';
 import { PlusOutlined, UserAddOutlined, UploadOutlined } from '@ant-design/icons';
 import { useClassManagement } from './hooks/useClassManagement';
 import { ClassList } from './components/ClassList';
@@ -8,6 +8,7 @@ import { UserList } from './components/UserList';
 import { CreateClassModal } from './components/CreateClassModal';
 import { CreateUserModal } from './components/CreateUserModal';
 import { ImportStudentsModal } from './components/ImportStudentsModal';
+import { resetUserPassword } from '../../../api';  // ✅ 导入重置密码 API
 
 const { TabPane } = Tabs;
 
@@ -32,6 +33,17 @@ export default function ClassManagement() {
     const [createLoading, setCreateLoading] = useState(false);
     const [userLoading, setUserLoading] = useState(false);
     const [importLoading, setImportLoading] = useState(false);
+
+    // ========== ✅ 重置密码处理函数 ==========
+    const handleResetPassword = async (username) => {
+        try {
+            await resetUserPassword(username);
+            message.success(`用户 "${username}" 的密码已重置为 123456`);
+        } catch (error) {
+            console.error('重置密码失败:', error);
+            message.error(error.response?.data?.detail || '重置密码失败，请重试');
+        }
+    };
 
     // ========== 处理函数 ==========
     const handleCreateClassWrapper = async (name, teacherUsername) => {
@@ -78,7 +90,13 @@ export default function ClassManagement() {
                                 添加用户
                             </Button>
                         </div>
-                        <UserList data={users} loading={loading} onDelete={handleDeleteUser} />
+                        {/* ✅ 添加 onResetPassword */}
+                        <UserList
+                            data={users}
+                            loading={loading}
+                            onDelete={handleDeleteUser}
+                            onResetPassword={handleResetPassword}
+                        />
                     </TabPane>
 
                     <TabPane tab="📚 班级管理" key="classes">
@@ -139,7 +157,7 @@ export default function ClassManagement() {
 
             <ClassList data={classes} loading={loading} onDelete={handleDeleteClass} />
 
-            {/* 创建班级弹窗（普通教师，不显示负责人选择） */}
+            {/* 创建班级弹窗 */}
             <CreateClassModal
                 open={createClassOpen}
                 onCancel={() => setCreateClassOpen(false)}

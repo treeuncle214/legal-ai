@@ -1,4 +1,3 @@
-# backend/api/deps.py
 """
 API 依赖注入
 """
@@ -95,16 +94,24 @@ def get_student_class_id(current_user: dict = Depends(get_current_student)) -> i
 def get_teacher_class_ids(current_user: dict = Depends(get_current_teacher)) -> List[int]:
     """
     获取当前教师负责的所有班级ID列表
+    - admin：返回所有班级
+    - 普通教师：返回自己负责的班级
     """
     from backend.database.engine import get_db_connection
     
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id FROM classes 
-            WHERE teacher_id = (SELECT id FROM users WHERE username = ?)
-        """, (current_user["username"],))
+        
+        # ✅ admin 返回所有班级
+        if current_user.get("username") == "admin":
+            cursor.execute("SELECT id FROM classes")
+        else:
+            cursor.execute("""
+                SELECT id FROM classes 
+                WHERE teacher_id = (SELECT id FROM users WHERE username = ?)
+            """, (current_user["username"],))
+        
         rows = cursor.fetchall()
         return [row[0] for row in rows]
     except Exception as e:

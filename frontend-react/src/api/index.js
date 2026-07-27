@@ -23,6 +23,31 @@ export const deleteUser = (username) =>
 export const getTeachers = () =>
     api.get('/api/teachers');
 
+// ==================== 用户个人信息接口 ====================
+
+/**
+ * 获取用户个人信息（含学院、专业）
+ * @param {string} username - 用户名
+ */
+export const getProfile = (username) =>
+    api.get(`/api/users/profile/${username}`);
+
+/**
+ * 更新用户个人信息
+ * @param {string} username - 用户名
+ * @param {object} data - { display_name, college, major }
+ */
+export const updateUser = (username, data) =>
+    api.put(`/api/users/${username}`, data);
+
+/**
+ * 重置用户密码（教师/管理员）
+ * @param {string} username - 用户名
+ */
+export const resetUserPassword = (username) =>
+    api.post(`/api/users/${username}/reset-password`);
+
+
 // ==================== 任务接口 ====================
 
 export const getTasks = () =>
@@ -95,7 +120,7 @@ export const publishBatchScores = (taskId) =>
 
 // ==================== 画像接口 ====================
 
-export const getProfile = (username) =>
+export const getStudentProfile = (username) =>
     api.get(`/api/profile/${username}`);
 
 // ==================== 导出接口 ====================
@@ -105,6 +130,57 @@ export const exportScores = (taskId) =>
 
 export const exportStudentReport = (username) =>
     api.download(`/api/export/student_report/${username}`, `${username}_报告.docx`);
+
+// ============================================================
+// ✅ 新增：成绩总览与学情分析接口
+// ============================================================
+
+/**
+ * 获取班级学情分析数据
+ * @param {number} classId - 班级ID
+ * @param {object} params - 查询参数 { task_type: '课堂练习' | '任务实践' | '综合考察' }
+ */
+export const getClassAnalytics = async (classId, params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    const url = `/api/scores/class-analytics/${classId}${queryString ? '?' + queryString : ''}`;
+    const response = await api.get(url);
+    return response;
+};
+
+/**
+ * 导出全班成绩 Excel
+ * @param {number} classId - 班级ID
+ * @param {object} params - 查询参数 { task_type: '课堂练习' | '任务实践' | '综合考察' }
+ * @returns {Promise<Blob>} Excel 文件 Blob
+ */
+export const exportClassScores = async (classId, params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    const url = `/api/scores/export-class-scores/${classId}${queryString ? '?' + queryString : ''}`;
+    const response = await api.get(url, {
+        responseType: 'blob'
+    });
+    return response;
+};
+
+/**
+ * 获取学生班级排名数据（班级对比）
+ * @param {string} username - 学生学号
+ * @param {number} classId - 班级ID
+ */
+export const getStudentClassRank = async (username, classId) => {
+    const response = await api.get(`/api/class-rank/${username}`, {
+        params: { class_id: classId }
+    });
+    return response;
+};
+
+/**
+ * 获取教师的班级列表
+ */
+export const getTeacherClasses = async () => {
+    const response = await api.get('/api/classes');
+    return response;
+};
 
 // ==================== 系统接口 ====================
 
@@ -201,6 +277,15 @@ export const deleteTemplate = (templateId) =>
     api.delete(`/api/rubric/templates/${templateId}`);
 
 /**
+ * 复制评分模板
+ * @param {number} templateId - 模板ID
+ */
+export const copyTemplate = (templateId) =>
+    api.post(`/api/rubric/templates/${templateId}/copy`);
+
+
+
+/**
  * 共享模板给其他教师
  */
 export const shareTemplate = (templateId, teacherUsername) =>
@@ -244,6 +329,92 @@ export const regenerateTermScore = (username) =>
  */
 export const updateTermSummary = (username, summary) =>
     api.put(`/api/term/scores/${username}/summary`, { teacher_summary: summary });
+
+
+// 下载任务附件
+export const downloadTaskAttachment = (taskId) =>
+    api.download(`/api/tasks/${taskId}/attachment`, `模板.docx`);
+
+// 创建任务（支持附件）
+export const createTaskWithAttachment = (formData) =>
+    api.upload('/api/tasks', formData);
+
+
+// ============================================================
+// 🆕 AI评分控制接口
+// ============================================================
+
+/**
+ * 触发单个提交的AI评分
+ * @param {number} submissionId - 提交ID
+ * @param {boolean} forceRetry - 是否强制重新评分
+ */
+export const triggerAIScore = (submissionId, forceRetry = false) =>
+    api.post(`/api/submissions/${submissionId}/ai-score`, null, {
+        params: { force_retry: forceRetry }
+    });
+
+/**
+ * 批量触发AI评分
+ * @param {number} taskId - 任务ID
+ * @param {string[]} studentUsernames - 指定学生列表（可选）
+ * @param {boolean} forceRetry - 是否强制重新评分
+ * @param {number} concurrentLimit - 并发数（默认3）
+ */
+export const triggerBatchAIScore = (taskId, studentUsernames = null, forceRetry = false, concurrentLimit = 3) => {
+    const data = {
+        task_id: taskId,
+        force_retry: forceRetry,
+        concurrent_limit: concurrentLimit
+    };
+    if (studentUsernames && studentUsernames.length > 0) {
+        data.student_usernames = studentUsernames;
+    }
+    return api.post('/api/submissions/batch-ai-score', data);
+};
+
+/**
+ * 查询批量评分进度
+ * @param {number} taskId - 任务ID
+ */
+export const getBatchProgress = (taskId) =>
+    api.get(`/api/submissions/batch-progress/${taskId}`);
+
+/**
+ * 查询单个提交的AI评分状态
+ * @param {number} submissionId - 提交ID
+ */
+export const getAIScoreStatus = (submissionId) =>
+    api.get(`/api/submissions/${submissionId}/ai-status`);
+
+// ============================================================
+// 🆕 测评报告接口
+// ============================================================
+
+/**
+ * 获取测评报告
+ */
+export const getReport = (submissionId) =>
+    api.get(`/api/review/${submissionId}/report`);
+
+/**
+ * 生成测评报告
+ */
+export const generateReport = (submissionId) =>
+    api.post(`/api/review/${submissionId}/generate-report`);
+
+/**
+ * 保存测评报告（教师编辑后）
+ */
+export const saveReport = (submissionId, reportData) =>
+    api.post(`/api/review/${submissionId}/save-report`, reportData);
+
+/**
+ * 下载Word测评报告
+ */
+export const downloadReport = (submissionId) =>
+    api.download(`/api/review/${submissionId}/download-report`, `测评报告.docx`);
+
 
 // ==================== 导出所有接口 ====================
 

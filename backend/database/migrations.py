@@ -1,4 +1,3 @@
-# backend/database/migrations.py
 """
 数据库迁移和初始化
 """
@@ -10,6 +9,27 @@ from backend.config import DB_PATH
 from backend.database.engine import engine, SessionLocal
 from backend.database.models import User, Task, Submission, Rubric
 from backend.config import SCORING_DIMENSIONS
+
+
+def ensure_user_columns():
+    """确保 User 表有新字段（college, major）"""
+    inspector = inspect(engine)
+    existing_columns = [col["name"] for col in inspector.get_columns("users")]
+    
+    with engine.connect() as conn:
+        if "college" not in existing_columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN college VARCHAR(100)"))
+            print("✅ 添加列: college")
+        else:
+            print("ℹ️ college 列已存在")
+        
+        if "major" not in existing_columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN major VARCHAR(100)"))
+            print("✅ 添加列: major")
+        else:
+            print("ℹ️ major 列已存在")
+        
+        conn.commit()
 
 
 def ensure_task_columns():
@@ -34,15 +54,24 @@ def ensure_task_columns():
             conn.execute(text("ALTER TABLE tasks ADD COLUMN allow_after_deadline INTEGER DEFAULT 0"))
             print("✅ 添加列: allow_after_deadline")
         
+        if "attachment_path" not in existing_columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN attachment_path VARCHAR(500)"))
+            print("✅ 添加列: attachment_path")
+        
+        if "attachment_filename" not in existing_columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN attachment_filename VARCHAR(200)"))
+            print("✅ 添加列: attachment_filename")
+        
         conn.commit()
 
 
 def ensure_submission_columns():
-    """确保 Submission 表有新4维度列"""
+    """确保 Submission 表有新列"""
     inspector = inspect(engine)
     existing_columns = [col["name"] for col in inspector.get_columns("submissions")]
     
     with engine.connect() as conn:
+        # 维度得分列
         for dim in SCORING_DIMENSIONS:
             key = dim["key"]
             for suffix, col_type in [("score", "FLOAT"), ("level", "VARCHAR(10)"), ("final_score", "FLOAT")]:
@@ -52,7 +81,7 @@ def ensure_submission_columns():
                     conn.execute(text(f"ALTER TABLE submissions ADD COLUMN {col_name} {col_type} DEFAULT {default}"))
                     print(f"✅ 添加列: {col_name}")
         
-        # 添加 AI 评分相关字段
+        # AI 评分相关字段
         ai_score_fields = [
             ("ai_score_status", "VARCHAR(20)", "'pending'"),
             ("ai_score_error", "TEXT", "NULL"),
@@ -60,6 +89,29 @@ def ensure_submission_columns():
         ]
         
         for field_name, field_type, default in ai_score_fields:
+            if field_name not in existing_columns:
+                conn.execute(text(f"ALTER TABLE submissions ADD COLUMN {field_name} {field_type} DEFAULT {default}"))
+                print(f"✅ 添加列: {field_name}")
+        
+        # AI 评分控制字段
+        ai_control_fields = [
+            ("ai_scored", "BOOLEAN", "0"),
+            ("ai_scored_at", "DATETIME", "NULL"),
+            ("ai_scored_by", "VARCHAR(50)", "NULL")
+        ]
+        
+        for field_name, field_type, default in ai_control_fields:
+            if field_name not in existing_columns:
+                conn.execute(text(f"ALTER TABLE submissions ADD COLUMN {field_name} {field_type} DEFAULT {default}"))
+                print(f"✅ 添加列: {field_name}")
+        
+        # 测评报告字段
+        report_fields = [
+            ("evaluation_report", "TEXT", "NULL"),
+            ("report_generated_at", "DATETIME", "NULL")
+        ]
+        
+        for field_name, field_type, default in report_fields:
             if field_name not in existing_columns:
                 conn.execute(text(f"ALTER TABLE submissions ADD COLUMN {field_name} {field_type} DEFAULT {default}"))
                 print(f"✅ 添加列: {field_name}")
@@ -168,6 +220,7 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     
     # 确保新字段存在
+    ensure_user_columns()      # 🆕 添加用户表字段
     ensure_task_columns()
     ensure_submission_columns()
     

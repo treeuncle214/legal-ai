@@ -1,4 +1,3 @@
-// frontend-react/src/pages/teacher/class/components/ImportStudentsModal.jsx
 import { useState, useRef } from 'react';
 import { Modal, Button, Form, Select, Input, Alert, Space } from 'antd';
 import {
@@ -30,9 +29,9 @@ export function ImportStudentsModal({
 
     const handleDownloadTemplate = () => {
         const template = [
-            ['学号', '姓名', '初始密码', '班级名称'],
-            ['20241001', '张三', '123456', '法学2024级01班'],
-            ['20241002', '李四', '123456', '法学2024级01班'],
+            ['学号', '姓名', '初始密码', '班级名称', '学院', '专业'],
+            ['20241001', '张三', '123456', '法学2024级01班', '法学院', '法学'],
+            ['20241002', '李四', '123456', '法学2024级01班', '法学院', '知识产权'],
         ];
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.aoa_to_sheet(template);
@@ -83,7 +82,7 @@ export function ImportStudentsModal({
                 description={
                     <ul style={{ marginBottom: 0, paddingLeft: 16 }}>
                         <li>支持 .xlsx, .xls, .csv 格式</li>
-                        <li>文件需包含：学号、姓名、初始密码（至少6位）、班级名称（可选）</li>
+                        <li>文件需包含：学号、姓名、初始密码（至少6位）、班级名称（可选）、学院（可选）、专业（可选）</li>
                         <li>如文件中未指定班级，将使用下方选择的默认班级</li>
                         <li>学号已存在的用户将跳过</li>
                         {!isAdmin && <li>只能导入到您自己负责的班级</li>}

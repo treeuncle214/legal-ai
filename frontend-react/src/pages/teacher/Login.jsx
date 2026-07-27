@@ -20,13 +20,21 @@ export default function TeacherLogin({ onLoginSuccess }) {
                 return;
             }
 
-            // ✅ 存储用户信息到 localStorage
+            // ✅ 修复：存储到 sessionStorage（与 client.js 一致）
+            sessionStorage.setItem('teacherUser', JSON.stringify({
+                username: userData.username,
+                role: userData.role,
+                display_name: userData.display_name || userData.username,
+                access_token: userData.access_token
+            }));
+
+            // 同时存一份到 localStorage
+            localStorage.setItem('token', userData.access_token);
             localStorage.setItem('user', JSON.stringify({
                 username: userData.username,
                 role: userData.role,
                 display_name: userData.display_name || userData.username
             }));
-            localStorage.setItem('token', userData.token || '');
 
             message.success('登录成功');
             onLoginSuccess(userData);

@@ -2,7 +2,7 @@
 用户管理 API
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException,UploadFile, File
 from sqlalchemy.orm import Session
 import io
 import openpyxl
@@ -19,11 +19,18 @@ from backend.database.classes import (
     find_class_by_name, get_all_teachers_with_classes
 )
 from backend.database.models import User
-from backend.schemas.user import UserCreate, UserResponse
+from backend.schemas.user import UserCreate, UserResponse, UserUpdate
 from backend.schemas.common import Response
 from backend.core.auth import verify_password, get_password_hash
 
 router = APIRouter(prefix="/api", tags=["用户管理"])
+
+
+
+
+
+
+
 
 
 # ==================== 用户管理接口 ====================
@@ -34,10 +41,7 @@ async def get_users(
     current_user: dict = Depends(get_current_teacher),
     db: Session = Depends(get_db)
 ):
-    """获取用户列表
-    - admin：看所有用户
-    - 普通教师：只看自己班级的学生
-    """
+    """获取用户列表"""
     from backend.database.engine import get_db_connection
     
     if current_user["username"] == "admin":
@@ -90,10 +94,127 @@ async def create_user(
         username=user_data.username,
         password=user_data.password,
         role=role,
-        display_name=user_data.display_name or user_data.username
+        display_name=user_data.display_name or user_data.username,
+        college=user_data.college or "",
+        major=user_data.major or ""
     )
     return Response(message="用户添加成功")
 
+
+# ==================== 修改密码接口 ====================
+
+@router.put("/users/password", response_model=Response)
+async def change_password(
+    password_data: dict,
+    current_user: dict = Depends(get_current_user),  # ✅ 任何登录用户都可以
+    db: Session = Depends(get_db)
+):
+    """修改当前用户密码 - 用户自己修改自己的密码"""
+    old_password = password_data.get("old_password")
+    new_password = password_data.get("new_password")
+    
+    if not old_password or not new_password:
+        raise HTTPException(status_code=400, detail="请提供旧密码和新密码")
+    
+    if len(new_password) < 8:
+        raise HTTPException(status_code=400, detail="新密码长度至少8位")
+    if not any(c.isalpha() for c in new_password) or not any(c.isdigit() for c in new_password):
+        raise HTTPException(status_code=400, detail="新密码必须包含字母和数字")
+    
+    # ✅ 直接使用 current_user 中的 username
+    user = db.query(User).filter(User.username == current_user["username"]).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    if not verify_password(old_password, user.password):
+        raise HTTPException(status_code=400, detail="旧密码错误")
+    
+    user.password = get_password_hash(new_password)
+    db.commit()
+    
+    return Response(message="密码修改成功")
+
+
+@router.put("/users/{username}", response_model=Response)
+async def update_user(
+    username: str,
+    user_data: UserUpdate,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """更新用户信息（姓名、学院、专业）"""
+    # ✅ 只能修改自己的信息
+    if current_user["username"] != username:
+        raise HTTPException(status_code=403, detail="只能修改自己的信息")
+    
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    if user_data.display_name is not None:
+        user.display_name = user_data.display_name
+    if user_data.college is not None:
+        user.college = user_data.college
+    if user_data.major is not None:
+        user.major = user_data.major
+    
+    db.commit()
+    db.refresh(user)
+    
+    return Response(data=user.to_dict(), message="用户信息已更新")
+
+
+@router.post("/users/{username}/reset-password", response_model=Response)
+async def reset_user_password(
+    username: str,
+    current_user: dict = Depends(get_current_user),  # ✅ 改为 get_current_user
+    db: Session = Depends(get_db)
+):
+    """
+    重置用户密码为默认密码 '123456'
+    - 管理员：可以重置所有人
+    - 普通教师：只能重置自己班级的学生
+    - 学生：无权重置
+    """
+    # ✅ 学生无权重置密码
+    if current_user["role"] == "student":
+        raise HTTPException(status_code=403, detail="学生无权重置密码")
+    
+    # 如果要重置的是自己，不允许（防止把自己锁了）
+    if current_user["username"] == username:
+        raise HTTPException(status_code=400, detail="不能重置自己的密码，请使用修改密码功能")
+    
+    # ✅ 普通教师：只能重置自己班级的学生
+    if current_user["role"] == "teacher":
+        teacher_class_ids = get_teacher_class_ids(current_user)
+        if not teacher_class_ids:
+            raise HTTPException(status_code=403, detail="您没有班级")
+        
+        from backend.database.engine import get_db_connection
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT uc.class_id 
+                FROM user_class uc
+                JOIN users u ON u.id = uc.user_id
+                WHERE u.username = ?
+            """, (username,))
+            student_classes = [row[0] for row in cursor.fetchall()]
+            if not any(cid in teacher_class_ids for cid in student_classes):
+                raise HTTPException(status_code=403, detail="该学生不在您班级中")
+        finally:
+            conn.close()
+    # ✅ admin 可以重置所有人，不做限制
+    
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    user.password = get_password_hash("123456")
+    db.commit()
+    
+    return Response(message=f"用户 {username} 的密码已重置为 123456")
 
 @router.delete("/users/{username}", response_model=Response)
 async def remove_user(
@@ -131,8 +252,7 @@ async def get_teachers_for_class(
     current_user: dict = Depends(get_current_teacher),
     db: Session = Depends(get_db)
 ):
-    """获取所有教师列表（用于admin创建班级时选择负责人）"""
-    # 仅 admin 可访问
+    """获取所有教师列表"""
     if current_user["username"] != "admin":
         raise HTTPException(status_code=403, detail="仅管理员可查看所有教师")
     
@@ -147,18 +267,13 @@ async def create_class_api(
     current_user: dict = Depends(get_current_teacher),
     db: Session = Depends(get_db)
 ):
-    """创建班级
-    - 普通教师：只能创建自己的班级
-    - admin：可以指定任意教师作为负责人
-    """
+    """创建班级"""
     from backend.database import get_user
     
     if not name or not name.strip():
         raise HTTPException(status_code=400, detail="班级名称不能为空")
     
-    # 确定负责教师
     if current_user["username"] == "admin" and teacher_username:
-        # admin 指定教师
         teacher = get_user(teacher_username)
         if not teacher:
             raise HTTPException(status_code=404, detail=f"教师 '{teacher_username}' 不存在")
@@ -167,7 +282,6 @@ async def create_class_api(
         teacher_id = teacher["id"]
         creator_name = f"admin (指定 {teacher_username})"
     else:
-        # 普通教师创建自己的班级
         teacher = get_user(current_user["username"])
         if not teacher:
             raise HTTPException(status_code=404, detail="教师不存在")
@@ -176,7 +290,6 @@ async def create_class_api(
         teacher_id = teacher["id"]
         creator_name = current_user["username"]
     
-    # 检查班级名称是否已被该教师使用
     existing = find_class_by_name(name.strip(), teacher_id)
     if existing:
         raise HTTPException(status_code=400, detail=f"您已存在名为 '{name}' 的班级")
@@ -270,35 +383,7 @@ async def delete_class_api(
     return Response(message="班级删除成功")
 
 
-# ==================== 修改密码接口 ====================
 
-@router.put("/users/password", response_model=Response)
-async def change_password(
-    password_data: dict,
-    current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """修改当前用户密码"""
-    old_password = password_data.get("old_password")
-    new_password = password_data.get("new_password")
-    
-    if not old_password or not new_password:
-        raise HTTPException(status_code=400, detail="请提供旧密码和新密码")
-    
-    if len(new_password) < 6:
-        raise HTTPException(status_code=400, detail="新密码长度至少6位")
-    
-    user = db.query(User).filter(User.username == current_user["username"]).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    
-    if not verify_password(old_password, user.password):
-        raise HTTPException(status_code=400, detail="旧密码错误")
-    
-    user.password = get_password_hash(new_password)
-    db.commit()
-    
-    return Response(message="密码修改成功")
 
 
 # ==================== 教师列表接口（用于模板共享） ====================
@@ -308,49 +393,31 @@ async def get_teachers(
     current_user: dict = Depends(get_current_teacher),
     db: Session = Depends(get_db)
 ):
-    """获取所有教师列表（用于模板共享选择）"""
+    """获取所有教师列表"""
     from backend.database.users import get_all_teachers
     teachers = get_all_teachers()
     return Response(data=teachers)
 
 
 # ==================== 批量导入学生 ====================
-
 @router.post("/users/batch-import", response_model=Response)
 async def batch_import_students(
-    file: bytes,
+    file: UploadFile = File(...),
     default_class_name: Optional[str] = None,
     current_user: dict = Depends(get_current_teacher),
     db: Session = Depends(get_db)
 ):
-    """
-    批量导入学生（Excel/CSV）
-    
-    文件格式：
-    - 列1: 学号 (username) - 必填
-    - 列2: 姓名 (display_name) - 必填
-    - 列3: 初始密码 (password) - 必填，至少6位
-    - 列4: 班级名称 (class_name) - 可选，如不填则使用 default_class_name
-    """
-    # 权限检查：仅教师和admin可导入
-    if current_user["role"] != "teacher":
+    """批量导入学生"""
+    if current_user["role"] not in ["teacher", "admin"]:
         raise HTTPException(status_code=403, detail="仅教师可导入学生")
     
-    # 获取当前教师的班级列表（用于验证班级归属）
     teacher = get_user(current_user["username"])
     if not teacher:
         raise HTTPException(status_code=404, detail="教师不存在")
     
-    teacher_class_ids = get_teacher_class_ids(current_user)
-    teacher_class_names = []
-    for cid in teacher_class_ids:
-        class_info = get_class(cid)
-        if class_info:
-            teacher_class_names.append(class_info["name"])
-    
     try:
-        # 解析 Excel 文件
-        workbook = openpyxl.load_workbook(io.BytesIO(file))
+        file_content = await file.read()
+        workbook = openpyxl.load_workbook(io.BytesIO(file_content))
         sheet = workbook.active
         
         results = {
@@ -361,19 +428,23 @@ async def batch_import_students(
             "failed_count": 0
         }
         
-        # 从第2行开始读取（第1行是表头）
-        for row_idx, row in enumerate(sheet.iter_rows(min_row=2, values=True), start=2):
-            if not row or not row[0]:
+        # ✅ 兼容所有版本
+        for row_idx, row in enumerate(sheet.iter_rows(min_row=2), start=2):
+            # ✅ 手动提取单元格值
+            row_values = [cell.value for cell in row]
+            
+            if not row_values or not row_values[0]:
                 continue
             
-            username = str(row[0]).strip() if row[0] else ""
-            display_name = str(row[1]).strip() if row[1] else ""
-            password = str(row[2]).strip() if row[2] else ""
-            class_name = str(row[3]).strip() if len(row) > 3 and row[3] else ""
-            
+            username = str(row_values[0]).strip() if row_values[0] else ""
+            display_name = str(row_values[1]).strip() if row_values[1] else ""
+            password = str(row_values[2]).strip() if row_values[2] else ""
+            class_name = str(row_values[3]).strip() if len(row_values) > 3 and row_values[3] else ""
+            college = str(row_values[4]).strip() if len(row_values) > 4 and row_values[4] else ""
+            major = str(row_values[5]).strip() if len(row_values) > 5 and row_values[5] else ""
+
             results["total"] += 1
             
-            # 验证数据
             errors = []
             if not username:
                 errors.append("学号为空")
@@ -391,7 +462,6 @@ async def batch_import_students(
                 results["failed_count"] += 1
                 continue
             
-            # 确定班级
             target_class_name = class_name or default_class_name
             if not target_class_name:
                 errors.append("未指定班级")
@@ -403,10 +473,8 @@ async def batch_import_students(
                 results["failed_count"] += 1
                 continue
             
-            # 查找班级（普通教师只能导入到自己的班级）
             class_info = find_class_by_name(target_class_name, teacher["id"])
             if not class_info:
-                # 如果是 admin，可以导入到任何班级
                 if current_user["username"] == "admin":
                     class_info = find_class_by_name(target_class_name)
                 if not class_info:
@@ -419,11 +487,8 @@ async def batch_import_students(
                     results["failed_count"] += 1
                     continue
             
-            # 检查用户是否已存在
             existing_user = get_user(username)
             if existing_user:
-                # 如果用户已存在，检查是否已在目标班级
-                # 简单处理：跳过或报错，这里选择报错
                 errors.append(f"学号 '{username}' 已存在")
                 results["failed"].append({
                     "row": row_idx,
@@ -433,19 +498,18 @@ async def batch_import_students(
                 results["failed_count"] += 1
                 continue
             
-            # 创建用户
             try:
                 add_user(
                     username=username,
                     password=password,
                     role="student",
-                    display_name=display_name
+                    display_name=display_name,
+                    college=college,
+                    major=major
                 )
                 
-                # 获取新创建的用户ID
                 new_user = get_user(username)
                 if new_user:
-                    # 添加到班级
                     add_result = add_student_to_class(new_user["id"], class_info["id"])
                     if add_result["success"]:
                         results["success"].append({
@@ -480,3 +544,60 @@ async def batch_import_students(
         
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"文件解析失败: {str(e)}")
+
+
+@router.get("/users/{username}/class", response_model=Response)
+async def get_student_class(
+    username: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取学生班级信息"""
+    from backend.database.submissions import get_student_class_info
+    
+    if current_user["role"] != "teacher" and current_user["username"] != username:
+        raise HTTPException(status_code=403, detail="无权查看")
+    
+    class_info = get_student_class_info(username)
+    if not class_info:
+        return Response(data={"class_name": "未分配班级"})
+    
+    return Response(data=class_info)
+
+
+@router.get("/users/profile/{username}", response_model=Response)
+async def get_user_profile(
+    username: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取用户完整信息（包括学院、专业）"""
+    if current_user["role"] != "admin" and current_user["username"] != username:
+        if current_user["role"] == "teacher":
+            teacher_class_ids = get_teacher_class_ids(current_user)
+            if teacher_class_ids:
+                from backend.database.engine import get_db_connection
+                conn = get_db_connection()
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT uc.class_id 
+                        FROM user_class uc
+                        JOIN users u ON u.id = uc.user_id
+                        WHERE u.username = ?
+                    """, (username,))
+                    student_classes = [row[0] for row in cursor.fetchall()]
+                    if not any(cid in teacher_class_ids for cid in student_classes):
+                        raise HTTPException(status_code=403, detail="无权查看该用户信息")
+                finally:
+                    conn.close()
+            else:
+                raise HTTPException(status_code=403, detail="无权查看该用户信息")
+        else:
+            raise HTTPException(status_code=403, detail="无权查看该用户信息")
+    
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    return Response(data=user.to_dict())

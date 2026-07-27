@@ -12,6 +12,8 @@ class UserCreate(BaseModel):
     password: str
     role: str = "student"
     display_name: Optional[str] = None
+    college: Optional[str] = ""      # 🆕 学院
+    major: Optional[str] = ""        # 🆕 专业
 
 
 class UserUpdate(BaseModel):
@@ -19,6 +21,8 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
     display_name: Optional[str] = None
     role: Optional[str] = None
+    college: Optional[str] = None    # 🆕 学院
+    major: Optional[str] = None      # 🆕 专业
 
 
 class UserResponse(BaseModel):
@@ -27,6 +31,8 @@ class UserResponse(BaseModel):
     username: str
     role: str
     display_name: str
+    college: Optional[str] = ""      # 🆕 学院
+    major: Optional[str] = ""        # 🆕 专业
     created_at: Optional[str] = None
 
 

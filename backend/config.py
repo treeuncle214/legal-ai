@@ -47,16 +47,14 @@ FILE_RETENTION_DAYS = int(os.getenv("FILE_RETENTION_DAYS", 30))
 MAX_STORAGE_MB = int(os.getenv("MAX_STORAGE_MB", 500))
 
 # ========== 评分维度定义 ==========
-# ========== 评分维度定义 ==========
 SCORING_DIMENSIONS = [
     {
         "key": "ai_retrieval",
         "name": "AI融合智能检索能力",
-        "weight": 0.30,
         "sub_indicators": [
             {
                 "key": "A1",
-                "name": "问题拆解与检索目标设定",
+                "name": "检索目标拆解",
                 "description": "能准确拆解复杂法律问题为可检索的子问题，明确检索目标与范围"
             },
             {
@@ -79,7 +77,6 @@ SCORING_DIMENSIONS = [
     {
         "key": "critical",
         "name": "批判性评估能力",
-        "weight": 0.20,
         "sub_indicators": [
             {
                 "key": "B1",
@@ -101,7 +98,6 @@ SCORING_DIMENSIONS = [
     {
         "key": "ethics",
         "name": "伦理合规辨识能力",
-        "weight": 0.20,
         "sub_indicators": [
             {
                 "key": "C1",
@@ -123,7 +119,6 @@ SCORING_DIMENSIONS = [
     {
         "key": "integration",
         "name": "信息整合应用能力",
-        "weight": 0.30,
         "sub_indicators": [
             {
                 "key": "D1",
@@ -137,7 +132,7 @@ SCORING_DIMENSIONS = [
             },
             {
                 "key": "D3",
-                "name": "局限认知与持续学习",
+                "name": "局限反思",
                 "description": "能评价检索过程的局限性、AI辅助的利弊，能提出改进方向并持续保持学习力"
             },
         ]
@@ -157,14 +152,6 @@ def get_dimension_name(key):
         if d["key"] == key:
             return d["name"]
     return key
-
-
-def get_dimension_weight(key):
-    """根据维度key获取权重"""
-    for d in SCORING_DIMENSIONS:
-        if d["key"] == key:
-            return d.get("weight", 0.25)
-    return 0.25
 
 
 # 14个二级指标的扁平列表
@@ -199,6 +186,17 @@ def get_final_report_module_mapping():
         {"module": "检索局限性与自我评价","max_score": 5,  "dimension_key": "integration"},
         {"module": "报告整体质量与附件", "max_score": 10, "dimension_key": "integration"},
     ]
+
+def get_level_by_score(score: float) -> str:
+    """根据分数获取等级"""
+    if score >= 85:
+        return "优"
+    elif score >= 75:
+        return "良"
+    elif score >= 55:
+        return "合格"
+    else:
+        return "不合格"
 
 
 # ========== AI API 配置 ==========

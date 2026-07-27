@@ -1,15 +1,26 @@
-// frontend-react/src/pages/teacher/class/components/CreateUserModal.jsx
-import { Modal, Input, Form, Select } from 'antd';
+import { Modal, Form, Input, Select } from 'antd';
 
-const { Option } = Select;
-
-export function CreateUserModal({ open, onCancel, onOk, loading }) {
+export function CreateUserModal({
+    open,
+    onCancel,
+    onOk,
+    loading,
+    classes = [],
+}) {
     const [form] = Form.useForm();
 
     const handleOk = async () => {
         try {
             const values = await form.validateFields();
-            await onOk(values);
+            await onOk({
+                username: values.username.trim(),
+                password: '123456', // 默认密码
+                role: values.role || 'student',
+                display_name: values.display_name.trim(),
+                college: values.college || '',
+                major: values.major || '',
+                class_id: values.class_id,
+            });
             form.resetFields();
         } catch (error) {
             // 表单验证失败或业务逻辑失败
@@ -23,21 +34,21 @@ export function CreateUserModal({ open, onCancel, onOk, loading }) {
 
     return (
         <Modal
-            title="添加用户"
+            title="创建用户"
             open={open}
             onOk={handleOk}
             onCancel={handleCancel}
             confirmLoading={loading}
-            okText="添加"
+            okText="创建"
             cancelText="取消"
         >
-            <Form form={form} layout="vertical" initialValues={{ role: 'student' }}>
+            <Form form={form} layout="vertical">
                 <Form.Item
                     name="username"
-                    label="用户名（学号/工号）"
-                    rules={[{ required: true, message: '请输入用户名' }]}
+                    label="学号"
+                    rules={[{ required: true, message: '请输入学号' }]}
                 >
-                    <Input placeholder="请输入用户名" />
+                    <Input placeholder="请输入学号" />
                 </Form.Item>
                 <Form.Item
                     name="display_name"
@@ -47,26 +58,43 @@ export function CreateUserModal({ open, onCancel, onOk, loading }) {
                     <Input placeholder="请输入姓名" />
                 </Form.Item>
                 <Form.Item
-                    name="password"
-                    label="初始密码"
-                    rules={[
-                        { required: true, message: '请输入初始密码' },
-                        { min: 6, message: '密码至少6位' }
-                    ]}
-                    extra="至少6位"
+                    name="college"
+                    label="学院"
                 >
-                    <Input.Password placeholder="请输入初始密码" />
+                    <Input placeholder="请输入学院" />
+                </Form.Item>
+                <Form.Item
+                    name="major"
+                    label="专业"
+                >
+                    <Input placeholder="请输入专业" />
+                </Form.Item>
+                <Form.Item
+                    name="class_id"
+                    label="班级"
+                    rules={[{ required: true, message: '请选择班级' }]}
+                >
+                    <Select placeholder="请选择班级">
+                        {classes.map(c => (
+                            <Select.Option key={c.id} value={c.id}>
+                                {c.name}
+                            </Select.Option>
+                        ))}
+                    </Select>
                 </Form.Item>
                 <Form.Item
                     name="role"
                     label="角色"
-                    rules={[{ required: true, message: '请选择角色' }]}
+                    initialValue="student"
                 >
-                    <Select placeholder="请选择角色">
-                        <Option value="student">学生</Option>
-                        <Option value="teacher">教师</Option>
+                    <Select>
+                        <Select.Option value="student">学生</Select.Option>
+                        <Select.Option value="teacher">教师</Select.Option>
                     </Select>
                 </Form.Item>
+                <div style={{ color: '#999', fontSize: 12 }}>
+                    初始密码默认为：<strong>123456</strong>
+                </div>
             </Form>
         </Modal>
     );

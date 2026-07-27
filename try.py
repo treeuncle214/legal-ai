@@ -1,15 +1,17 @@
-from backend.database.engine import SessionLocal
-from backend.database.models import RubricTemplate, TemplateShare
-db = SessionLocal()
+import os
+import sys
+sys.path.insert(0, 'D:/projects/legal-ai-assessment')
 
-templates = db.query(RubricTemplate).all()
-print('所有模板:')
-for t in templates:
-    print(f'  id={t.id}, name={t.name}, created_by={t.created_by}, share_type={t.share_type}')
+from backend.core.clients.deepseek_client import call_deepseek_api
 
-shares = db.query(TemplateShare).all()
-print('\n所有共享记录:')
-for s in shares:
-    print(f'  template_id={s.template_id}, shared_with={s.shared_with}')
+# 极简测试
+test_prompt = "请回复一个JSON: {\"test\": \"success\"}"
 
-db.close()
+print("测试 DeepSeek API...")
+result = call_deepseek_api(test_prompt, max_tokens=100)
+print(f"结果: {result}")
+print(f"结果类型: {type(result)}")
+print(f"结果长度: {len(result) if result else 0}")
+
+if result:
+    print(f"repr: {repr(result)}")

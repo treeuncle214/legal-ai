@@ -1,11 +1,24 @@
 // frontend-react/src/pages/teacher/tasks/components/TemplateManager.jsx
-import { Table, Button, Space, Tag, Tooltip, Popconfirm, Card, message } from 'antd';
+import { Table, Button, Space, Tag, Tooltip, Popconfirm, Card } from 'antd';
 import {
     EyeOutlined, CopyOutlined, ShareAltOutlined,
     EditOutlined, DeleteOutlined, UserOutlined,
     TeamOutlined, GlobalOutlined
 } from '@ant-design/icons';
-import { unshareTemplate } from '@/api';
+
+// ✅ 获取当前登录用户
+const getCurrentUsername = () => {
+    try {
+        const teacherUser = sessionStorage.getItem('teacherUser');
+        if (teacherUser) {
+            const user = JSON.parse(teacherUser);
+            return user.username;
+        }
+        return null;
+    } catch {
+        return null;
+    }
+};
 
 export function TemplateManager({
     templates,
@@ -15,22 +28,22 @@ export function TemplateManager({
     onDelete,
     onCopy,
     onShare,
-    onUnshare,  // 新增：取消共享回调
-    isOwner = (record) => record.created_by === 'admin'
 }) {
-    // 处理取消共享（被分享者从自己列表中移除）
-    const handleUnshare = async (record) => {
-        try {
-            await unshareTemplate(record.id, 'current_user'); // 需要后端支持
-            message.success('已从您的模板列表中移除');
-            if (onUnshare) onUnshare(record.id);
-        } catch (error) {
-            message.error('移除失败: ' + (error.response?.data?.detail || error.message));
-        }
+    const currentUsername = getCurrentUsername();
+
+    // ✅ 判断是否是模板的创建者
+    const isOwner = (record) => {
+        // 如果是共享来的模板，不属于当前用户
+        if (record.is_shared) return false;
+        return record.created_by === currentUsername;
+    };
+
+    // ✅ 判断是否是共享模板
+    const isShared = (record) => {
+        return record.is_shared === true;
     };
 
     const columns = [
-        // ... 前面的列保持不变 ...
         {
             title: '模板名称',
             dataIndex: 'name',
@@ -93,11 +106,12 @@ export function TemplateManager({
         },
         {
             title: '操作',
-            width: 360,  // 加宽以容纳更多按钮
+            width: 360,
             fixed: 'right',
             render: (_, record) => {
                 const owner = isOwner(record);
-                const isShared = record.is_shared;
+                const shared = isShared(record);
+
                 return (
                     <Space size="small" wrap>
                         <Button size="small" icon={<EyeOutlined />} onClick={() => onView(record)}>
@@ -106,35 +120,54 @@ export function TemplateManager({
                         <Button size="small" icon={<CopyOutlined />} onClick={() => onCopy(record)}>
                             复制
                         </Button>
-                        {owner && !isShared && (
+
+                        {owner && (
                             <>
-                                <Button size="small" icon={<ShareAltOutlined />} onClick={() => onShare(record.id)}>
+                                <Button
+                                    size="small"
+                                    icon={<ShareAltOutlined />}
+                                    onClick={() => onShare(record.id)}
+                                >
                                     共享
                                 </Button>
-                                <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => onEdit(record)}>
+                                <Button
+                                    size="small"
+                                    type="primary"
+                                    icon={<EditOutlined />}
+                                    onClick={() => onEdit(record)}
+                                >
                                     编辑
                                 </Button>
-                                <Popconfirm title="确定删除此模板？" onConfirm={() => onDelete(record.id)}>
-                                    <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
-                                </Popconfirm>
-                            </>
-                        )}
-                        {isShared && (
-                            <>
-                                <Tooltip title={`由 ${record.created_by} 共享，只能查看和复制`}>
-                                    <Tag color="purple">只读</Tag>
-                                </Tooltip>
-                                {/* 被分享者可以移除（取消共享） */}
                                 <Popconfirm
-                                    title="确定从您的列表中移除该模板？"
-                                    description="这不会影响原模板，只是从您的列表中隐藏"
+                                    title="确定删除此模板？"
+                                    description="删除后不可恢复"
                                     onConfirm={() => onDelete(record.id)}
+                                    okText="确定删除"
+                                    cancelText="取消"
                                 >
                                     <Button size="small" danger icon={<DeleteOutlined />}>
-                                        移除
+                                        删除
                                     </Button>
                                 </Popconfirm>
                             </>
+                        )}
+
+                        {shared && (
+                            <Popconfirm
+                                title="确定从您的模板库中移除？"
+                                description="这不会影响原模板，只是从您的列表中隐藏"
+                                onConfirm={() => onDelete(record.id)}
+                                okText="确定移除"
+                                cancelText="取消"
+                            >
+                                <Button size="small" danger icon={<DeleteOutlined />}>
+                                    移除
+                                </Button>
+                            </Popconfirm>
+                        )}
+
+                        {!owner && !shared && (
+                            <Tag color="default">只读</Tag>
                         )}
                     </Space>
                 );

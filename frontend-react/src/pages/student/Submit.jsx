@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Button, Upload, Card, message, Descriptions, Spin, Alert } from 'antd';
-import { InboxOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { Button, Upload, Card, message, Descriptions, Spin, Alert, Row, Col } from 'antd';
+import { InboxOutlined, CheckCircleOutlined, FileWordOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { submitWord, getTaskDetail, getRemainingSubmissions } from '../../api';
 
@@ -77,8 +77,10 @@ export default function StudentSubmit() {
             console.error('提交失败:', err);
             if (err.response?.data?.detail) {
                 message.error(err.response.data.detail);
+            } else if (err.message) {
+                message.error(err.message);
             } else {
-                message.error(err.message || '提交失败');
+                message.error('提交失败，请稍后重试');
             }
         } finally {
             setLoading(false);
@@ -113,9 +115,9 @@ export default function StudentSubmit() {
     }
 
     return (
-        <div>
+        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 16px' }}>
             <Card title={`提交作业：${task?.title || '加载中...'}`} style={{ marginBottom: 16 }}>
-                <Descriptions column={2} bordered>
+                <Descriptions column={2} bordered size="small">
                     <Descriptions.Item label="任务描述" span={2}>{task?.description || '无'}</Descriptions.Item>
                     <Descriptions.Item label="截止时间">
                         <span style={{ color: remainingInfo.is_deadline_passed ? '#ff4d4f' : 'inherit' }}>
@@ -131,76 +133,159 @@ export default function StudentSubmit() {
                 </Descriptions>
             </Card>
 
-            <Card title="上传 Word 文档（必须同时上传两个文件）">
-                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-                    <div style={{ flex: 1, minWidth: 250 }}>
-                        <h4 style={{ marginBottom: 8 }}>📋 检索过程记录</h4>
-                        <Dragger
-                            accept=".docx"
-                            beforeUpload={(file) => {
-                                if (file.size > 10 * 1024 * 1024) {
-                                    message.error('文件大小不能超过10MB');
+            {/* ✅ 修复：styles.body 替代 bodyStyle */}
+            <Card title="📤 上传作业文档" styles={{ body: { padding: '24px 16px' } }}>
+                <Row gutter={[24, 16]}>
+                    {/* 文件1：AI交互记录 */}
+                    <Col xs={24} md={12}>
+                        <div style={{
+                            height: '100%',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            background: '#fafafa',
+                            borderRadius: 8,
+                            padding: '16px 16px 8px 16px',
+                            border: '1px solid #f0f0f0'
+                        }}>
+                            <div style={{ marginBottom: 12 }}>
+                                <span style={{
+                                    fontWeight: 600,
+                                    fontSize: 15,
+                                    color: '#1890ff',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8
+                                }}>
+                                    <FileWordOutlined /> 文件1：AI交互记录
+                                </span>
+                                <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
+                                    📝 包含：提示词、AI输出、用户反馈、交互迭代过程
+                                </div>
+                            </div>
+                            <Dragger
+                                accept=".docx"
+                                beforeUpload={(file) => {
+                                    if (file.size > 10 * 1024 * 1024) {
+                                        message.error('文件大小不能超过10MB');
+                                        return false;
+                                    }
+                                    setFile1(file);
                                     return false;
-                                }
-                                setFile1(file);
-                                return false;
-                            }}
-                            showUploadList={true}
-                            fileList={file1 ? [file1] : []}
-                            onRemove={() => setFile1(null)}
-                            disabled={loading || !canSubmit}
-                            maxCount={1}
-                        >
-                            <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-                            <p className="ant-upload-text">点击或拖拽上传</p>
-                            <p className="ant-upload-hint">仅支持 .docx 格式</p>
-                        </Dragger>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 250 }}>
-                        <h4 style={{ marginBottom: 8 }}>📄 最终检索结果</h4>
-                        <Dragger
-                            accept=".docx"
-                            beforeUpload={(file) => {
-                                if (file.size > 10 * 1024 * 1024) {
-                                    message.error('文件大小不能超过10MB');
+                                }}
+                                showUploadList={true}
+                                fileList={file1 ? [file1] : []}
+                                onRemove={() => setFile1(null)}
+                                disabled={loading || !canSubmit}
+                                maxCount={1}
+                                style={{ flex: 1 }}
+                            >
+                                <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                                <p className="ant-upload-text">点击或拖拽上传</p>
+                                <p className="ant-upload-hint">仅支持 .docx 格式</p>
+                            </Dragger>
+                            {file1 && (
+                                <div style={{
+                                    marginTop: 8,
+                                    fontSize: 12,
+                                    color: '#52c41a',
+                                    textAlign: 'center'
+                                }}>
+                                    ✅ 已上传：{file1.name}
+                                </div>
+                            )}
+                        </div>
+                    </Col>
+
+                    {/* 文件2：作业正文 */}
+                    <Col xs={24} md={12}>
+                        <div style={{
+                            height: '100%',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            background: '#fafafa',
+                            borderRadius: 8,
+                            padding: '16px 16px 8px 16px',
+                            border: '1px solid #f0f0f0'
+                        }}>
+                            <div style={{ marginBottom: 12 }}>
+                                <span style={{
+                                    fontWeight: 600,
+                                    fontSize: 15,
+                                    color: '#52c41a',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8
+                                }}>
+                                    <FileWordOutlined /> 文件2：作业正文
+                                </span>
+                                <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
+                                    📄 包含：检索策略、分析过程、结论报告
+                                </div>
+                            </div>
+                            <Dragger
+                                accept=".docx"
+                                beforeUpload={(file) => {
+                                    if (file.size > 10 * 1024 * 1024) {
+                                        message.error('文件大小不能超过10MB');
+                                        return false;
+                                    }
+                                    setFile2(file);
                                     return false;
-                                }
-                                setFile2(file);
-                                return false;
-                            }}
-                            showUploadList={true}
-                            fileList={file2 ? [file2] : []}
-                            onRemove={() => setFile2(null)}
-                            disabled={loading || !canSubmit}
-                            maxCount={1}
+                                }}
+                                showUploadList={true}
+                                fileList={file2 ? [file2] : []}
+                                onRemove={() => setFile2(null)}
+                                disabled={loading || !canSubmit}
+                                maxCount={1}
+                                style={{ flex: 1 }}
+                            >
+                                <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                                <p className="ant-upload-text">点击或拖拽上传</p>
+                                <p className="ant-upload-hint">仅支持 .docx 格式</p>
+                            </Dragger>
+                            {file2 && (
+                                <div style={{
+                                    marginTop: 8,
+                                    fontSize: 12,
+                                    color: '#52c41a',
+                                    textAlign: 'center'
+                                }}>
+                                    ✅ 已上传：{file2.name}
+                                </div>
+                            )}
+                        </div>
+                    </Col>
+                </Row>
+
+                {/* 提交状态和按钮 */}
+                <Row justify="center" style={{ marginTop: 24 }}>
+                    <Col span={24} style={{ textAlign: 'center' }}>
+                        {!canSubmit && (
+                            <div style={{ color: '#ff4d4f', marginBottom: 16 }}>
+                                {submitDisabledReason}
+                            </div>
+                        )}
+                        <Button
+                            type="primary"
+                            size="large"
+                            onClick={handleSubmit}
+                            loading={loading}
+                            disabled={!file1 || !file2 || !canSubmit}
+                            style={{ minWidth: 200 }}
                         >
-                            <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-                            <p className="ant-upload-text">点击或拖拽上传</p>
-                            <p className="ant-upload-hint">仅支持 .docx 格式</p>
-                        </Dragger>
-                    </div>
-                </div>
+                            {loading ? '提交中...' : '📤 提交作业'}
+                        </Button>
+                        {loading && <Spin tip="正在上传..." style={{ display: 'block', marginTop: 16 }} />}
 
-                {!canSubmit && (
-                    <div style={{ textAlign: 'center', marginTop: 16, color: '#ff4d4f' }}>
-                        {submitDisabledReason}
-                    </div>
-                )}
-
-                <div style={{ marginTop: 24, textAlign: 'center' }}>
-                    <Button
-                        type="primary"
-                        size="large"
-                        onClick={handleSubmit}
-                        loading={loading}
-                        disabled={!file1 || !file2 || !canSubmit}
-                        style={{ minWidth: 200 }}
-                    >
-                        {loading ? '提交中...' : '提交作业'}
-                    </Button>
-                </div>
-
-                {loading && <Spin tip="正在上传..." style={{ display: 'block', marginTop: 16 }} />}
+                        {/* 文件状态提示 */}
+                        <div style={{ marginTop: 12, fontSize: 13, color: '#999' }}>
+                            {!file1 && !file2 && '请上传两个 Word 文档'}
+                            {file1 && !file2 && '请上传文件2：作业正文'}
+                            {!file1 && file2 && '请上传文件1：AI交互记录'}
+                            {file1 && file2 && '✅ 两个文件已就绪，可以提交'}
+                        </div>
+                    </Col>
+                </Row>
             </Card>
         </div>
     );

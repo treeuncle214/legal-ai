@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Table, Button, Modal, Input, message, Popconfirm, Tag, Space, Card, Descriptions, Typography } from 'antd';
-import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined, UserOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Input, message, Popconfirm, Tag, Space, Card, Descriptions, Typography, Tooltip } from 'antd';
+import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined, UserOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getClassStudents, addStudentToClass, removeStudentFromClass, getClasses } from '../../api';
+import { getClassStudents, addStudentToClass, removeStudentFromClass, getClasses, resetUserPassword } from '../../api';
 
 const { Title } = Typography;
 
@@ -19,12 +19,10 @@ export default function ClassDetail() {
     const fetchData = async () => {
         setLoading(true);
         try {
-            // 获取班级信息
             const classes = await getClasses();
             const info = classes.find(c => c.id === parseInt(classId));
             setClassInfo(info || null);
 
-            // 获取学生列表
             const studentsData = await getClassStudents(classId);
             setStudents(studentsData || []);
         } catch (error) {
@@ -55,18 +53,16 @@ export default function ClassDetail() {
             fetchData();
         } catch (error) {
             console.error('添加学生失败:', error);
-            // ✅ 提取更详细的错误信息
             let errorMsg = '添加学生失败';
             if (error.response?.data?.detail) {
                 errorMsg = error.response.data.detail;
             } else if (error.message) {
                 errorMsg = error.message;
             }
-            // ✅ 如果是"已在其他班级"的错误，显示更友好的提示
             if (errorMsg.includes('已在「') && errorMsg.includes('」班级中')) {
                 message.error({
                     content: errorMsg,
-                    duration: 5,  // 显示时间更长，方便阅读
+                    duration: 5,
                 });
             } else {
                 message.error(errorMsg);
@@ -87,24 +83,56 @@ export default function ClassDetail() {
         }
     };
 
+    // ✅ 重置密码处理函数
+    const handleResetPassword = async (username, displayName) => {
+        try {
+            await resetUserPassword(username);
+            message.success(`用户 "${displayName || username}" 的密码已重置为 123456`);
+        } catch (error) {
+            console.error('重置密码失败:', error);
+            message.error(error.response?.data?.detail || '重置密码失败，请重试');
+        }
+    };
+
+    // ✅ 表格列 - 添加重置密码按钮
     const columns = [
         { title: '学号', dataIndex: 'username', width: 150 },
         { title: '姓名', dataIndex: 'display_name', width: 150 },
         { title: '加入时间', dataIndex: 'joined_at', width: 180 },
         {
             title: '操作',
-            width: 100,
+            width: 220,
             render: (_, record) => (
-                <Popconfirm
-                    title={`确定移除学生 "${record.display_name}"？`}
-                    onConfirm={() => handleRemoveStudent(record.username)}
-                    okText="确定"
-                    cancelText="取消"
-                >
-                    <Button type="link" danger icon={<DeleteOutlined />}>
-                        移除
-                    </Button>
-                </Popconfirm>
+                <Space>
+                    <Tooltip title="重置密码为 123456">
+                        <Popconfirm
+                            title="重置密码"
+                            description={`确定要将用户 "${record.display_name || record.username}" 的密码重置为 123456 吗？`}
+                            onConfirm={() => handleResetPassword(record.username, record.display_name)}
+                            okText="确定重置"
+                            cancelText="取消"
+                            placement="top"
+                        >
+                            <Button
+                                type="link"
+                                size="small"
+                                icon={<ReloadOutlined />}
+                            >
+                                重置密码
+                            </Button>
+                        </Popconfirm>
+                    </Tooltip>
+                    <Popconfirm
+                        title={`确定移除学生 "${record.display_name}"？`}
+                        onConfirm={() => handleRemoveStudent(record.username)}
+                        okText="确定"
+                        cancelText="取消"
+                    >
+                        <Button type="link" danger icon={<DeleteOutlined />} size="small">
+                            移除
+                        </Button>
+                    </Popconfirm>
+                </Space>
             ),
         },
     ];

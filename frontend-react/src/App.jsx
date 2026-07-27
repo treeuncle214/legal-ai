@@ -5,7 +5,7 @@ import zhCN from 'antd/locale/zh_CN';
 
 // 公共组件
 import AppLayout from './components/Layout';
-import ChangePassword from './pages/ChangePassword';
+// ❌ 删除 ChangePassword 导入
 
 // 学生端页面
 import StudentLogin from './pages/student/Login';
@@ -14,6 +14,7 @@ import StudentSubmit from './pages/student/Submit';
 import StudentProfile from './pages/student/Profile';
 import MySubmissions from './pages/student/MySubmissions';
 import ScoreSummary from './pages/student/ScoreSummary';
+import StudentPersonalInfo from './pages/student/PersonalInfo';
 
 // 教师端页面
 import TeacherLogin from './pages/teacher/Login';
@@ -23,6 +24,7 @@ import TeacherScores from './pages/teacher/Scores';
 import TeacherStudentProfile from './pages/teacher/StudentProfile';
 import ClassManagement from './pages/teacher/class';
 import ClassDetail from './pages/teacher/ClassDetail';
+import TeacherPersonalInfo from './pages/teacher/PersonalInfo';
 
 // 图标
 import {
@@ -80,7 +82,8 @@ function StudentLayout() {
         <Route path="score-summary" element={<ScoreSummary />} />
         <Route path="submit/:taskId" element={<StudentSubmit />} />
         <Route path="profile" element={<StudentProfile />} />
-        {/* 移除 change-password 路由，已移到顶层 */}
+        {/* 个人信息路由 */}
+        <Route path="personal-info" element={<StudentPersonalInfo />} />
         <Route path="*" element={<Navigate to="tasks" replace />} />
       </Routes>
     </AppLayout>
@@ -133,7 +136,8 @@ function TeacherLayout() {
         <Route path="review" element={<TeacherReview />} />
         <Route path="scores" element={<TeacherScores />} />
         <Route path="profile" element={<TeacherStudentProfile />} />
-        {/* 移除 change-password 路由，已移到顶层 */}
+        {/* 个人信息路由 */}
+        <Route path="personal-info" element={<TeacherPersonalInfo />} />
         <Route path="*" element={<Navigate to="tasks" replace />} />
       </Routes>
     </AppLayout>
@@ -173,10 +177,6 @@ export default function App() {
       <AntApp>
         <BrowserRouter>
           <Routes>
-            {/* ===== 顶层路由 ===== */}
-            {/* 修改密码（独立页面，无需布局） */}
-            <Route path="/change-password" element={<ChangePassword />} />
-
             {/* 学生端 */}
             <Route path="/student/login" element={<StudentLoginWrapper />} />
             <Route path="/student/*" element={<StudentLayout />} />

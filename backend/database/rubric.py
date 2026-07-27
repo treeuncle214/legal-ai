@@ -296,7 +296,7 @@ def remove_template_share(template_id: int, teacher_username: str) -> bool:
 # ==================== 任务评分配置（快照） ====================
 
 def create_task_rubric_snapshot(
-    task_id: int,
+    task_id: int = None,
     template_id: int = None,
     overall_prompt: str = None,
     indicators: List[Dict] = None
@@ -304,6 +304,7 @@ def create_task_rubric_snapshot(
     """为任务创建评分配置快照"""
     db = SessionLocal()
     try:
+        # 如果 task_id 是 None 或 0，先创建空记录，后续再更新
         task_rubric = TaskRubric(
             task_id=task_id,
             template_id=template_id,
@@ -325,14 +326,16 @@ def create_task_rubric_snapshot(
                 db.add(tri)
             db.commit()
 
+        print(f"✅ 创建任务评分配置成功: rubric_id={task_rubric.id}, task_id={task_id}")
         return task_rubric.id
     except Exception as e:
         db.rollback()
-        print(f"创建任务评分配置失败: {e}")
+        print(f"❌ 创建任务评分配置失败: {e}")
+        import traceback
+        traceback.print_exc()
         return None
     finally:
         db.close()
-
 
 def get_task_rubric(task_id: int) -> Optional[Dict]:
     """获取任务的评分配置"""
@@ -370,5 +373,65 @@ def update_task_rubric_task_id(rubric_id: int, task_id: int) -> bool:
         db.rollback()
         print(f"更新任务评分配置失败: {e}")
         return False
+    finally:
+        db.close()
+
+# ==================== 模板复制 ====================
+
+def copy_template(template_id: int, new_created_by: str):
+    """
+    复制模板（包括所有指标）
+    - 复制 RubricTemplate
+    - 复制 RubricTemplateIndicator
+    - 不复制 TemplateShare（新模板私有）
+    """
+    from backend.database.models import RubricTemplate, RubricTemplateIndicator
+    db = SessionLocal()
+    try:
+        # 1. 获取原模板
+        original = db.query(RubricTemplate).filter(RubricTemplate.id == template_id).first()
+        if not original:
+            print(f"❌ 原模板 {template_id} 不存在")
+            return None
+        
+        # 2. 复制模板基本信息
+        new_name = f"{original.name} (复制)"
+        new_template = RubricTemplate(
+            name=new_name,
+            description=original.description,
+            task_type=original.task_type,
+            overall_prompt=original.overall_prompt,
+            created_by=new_created_by,
+            share_type="private"  # 复制后默认为私有
+        )
+        db.add(new_template)
+        db.commit()
+        db.refresh(new_template)
+        
+        # 3. 复制指标
+        indicators = db.query(RubricTemplateIndicator).filter(
+            RubricTemplateIndicator.template_id == template_id
+        ).order_by(RubricTemplateIndicator.sort_order).all()
+        
+        for idx, ind in enumerate(indicators):
+            new_ind = RubricTemplateIndicator(
+                template_id=new_template.id,
+                indicator_key=ind.indicator_key,
+                max_score=ind.max_score,
+                prompt=ind.prompt,
+                sort_order=idx
+            )
+            db.add(new_ind)
+        
+        db.commit()
+        print(f"✅ 模板 {template_id} 复制成功，新模板 ID: {new_template.id}，创建者: {new_created_by}")
+        return new_template.id
+        
+    except Exception as e:
+        db.rollback()
+        print(f"❌ 复制模板失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
     finally:
         db.close()
