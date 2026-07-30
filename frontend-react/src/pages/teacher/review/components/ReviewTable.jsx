@@ -1,6 +1,5 @@
 import { Table, Button, Space, Tag } from 'antd';
 import { FileWordOutlined } from '@ant-design/icons';
-import AIActionButtons from './AIActionButtons';
 
 export const ReviewTable = ({
     submissions,
@@ -8,8 +7,6 @@ export const ReviewTable = ({
     onReview,
     onPublish,
     onOpenWord,
-    onAIScoreSuccess,
-    onAIScoreError
 }) => {
     const getStatus = (record) => {
         if (record.is_reviewed === 1 && record.score_published === 1) {
@@ -33,6 +30,12 @@ export const ReviewTable = ({
 
     const columns = [
         { title: '学号', dataIndex: 'student_username', width: 120 },
+        {
+            title: '姓名',
+            dataIndex: 'student_name',
+            width: 100,
+            render: (text, record) => text || record.student_username,
+        },
         {
             title: '提交时间',
             dataIndex: 'submit_time',
@@ -66,17 +69,7 @@ export const ReviewTable = ({
                 return <Tag color="green">文本框</Tag>;
             },
         },
-        {
-            title: 'AI评分',
-            width: 160,
-            render: (_, record) => (
-                <AIActionButtons
-                    submission={record}
-                    onSuccess={onAIScoreSuccess}
-                    onError={onAIScoreError}
-                />
-            ),
-        },
+        // ✅ 已移除「AI评分」列
         {
             title: '状态',
             width: 150,
@@ -86,31 +79,36 @@ export const ReviewTable = ({
             title: '操作',
             width: 220,
             render: (_, record) => {
-                // 如果AI评分失败或未评分，不能审批
-                if (!record.ai_scored && record.ai_score_status !== 'completed') {
-                    return (
-                        <Button size="small" disabled>
-                            等待AI评分
-                        </Button>
-                    );
+                // 评分中或未评分 → 不可操作
+                if (record.ai_score_status === 'scoring') {
+                    return <Button size="small" disabled>评分中...</Button>;
                 }
-                if (record.is_reviewed === 0) {
+                if (!record.ai_scored && record.ai_score_status !== 'completed') {
+                    return <Button size="small" disabled>等待AI评分</Button>;
+                }
+
+                // 已AI评分，待审批
+                if (record.is_reviewed === 0 && record.ai_scored) {
                     return (
                         <Button type="primary" size="small" onClick={() => onReview(record)}>
                             审批
                         </Button>
                     );
                 }
+
+                // 已审批，未发布
                 if (record.is_reviewed === 1 && record.score_published === 0) {
                     return (
                         <Space>
                             <Button size="small" onClick={() => onReview(record)}>查看</Button>
                             <Button type="primary" size="small" onClick={() => onPublish(record.id)}>
-                                发布成绩
+                                发布
                             </Button>
                         </Space>
                     );
                 }
+
+                // 已发布
                 return (
                     <Button size="small" onClick={() => onReview(record)}>查看</Button>
                 );

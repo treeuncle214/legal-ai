@@ -113,29 +113,41 @@ def save_term_score(student_username: str, term_data: dict):
         from backend.database.engine import SessionLocal
         db = SessionLocal()
         
-        existing = db.query(TermScore).filter(
-            TermScore.student_username == student_username,
-            TermScore.class_id == term_data.get("class_id")
-        ).first()
+        # ✅ 检查 class_id 是否存在
+        class_id = term_data.get("class_id")
+        
+        query = db.query(TermScore).filter(
+            TermScore.student_username == student_username
+        )
+        
+        # 如果有 class_id，精确匹配
+        if class_id:
+            query = query.filter(TermScore.class_id == class_id)
+        else:
+            # 如果没有 class_id，取最新的一条
+            query = query.order_by(TermScore.generated_at.desc())
+        
+        existing = query.first()
         
         if existing:
-            existing.total_score = term_data["total_score"]
-            existing.level = term_data["level"]
+            existing.course_total_score = term_data.get("total_score", 0)
+            existing.level = term_data.get("level", "待评测")
             existing.details = json.dumps(term_data.get("details", []), ensure_ascii=False)
             existing.updated_at = datetime.now()
         else:
+            # 创建新记录时，如果有 class_id 则保存
             term_score = TermScore(
                 student_username=student_username,
-                class_id=term_data.get("class_id"),
-                total_score=term_data["total_score"],
-                level=term_data["level"],
+                class_id=class_id,  # 可能为 None
+                course_total_score=term_data.get("total_score", 0),
+                level=term_data.get("level", "待评测"),
                 details=json.dumps(term_data.get("details", []), ensure_ascii=False),
-                created_at=datetime.now()
+                generated_at=datetime.now()
             )
             db.add(term_score)
         
         db.commit()
-        logger.info(f"学期总评已保存: {student_username}, 得分: {term_data['total_score']}")
+        logger.info(f"学期总评已保存: {student_username}, 得分: {term_data.get('total_score', 0)}")
     except Exception as e:
         logger.error(f"保存学期总评失败: {e}")
         if db:
@@ -152,12 +164,7 @@ async def get_student_term_score(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    获取学生的学期总评
-    - 学生只能查看自己的
-    - 教师只能查看自己班级学生的
-    - admin 可以查看所有
-    """
+    """获取学生的学期总评"""
     # 权限校验
     if current_user["role"] == "student":
         if current_user["username"] != username:
@@ -182,9 +189,10 @@ async def get_student_term_score(
         finally:
             conn.close()
     
+    # ✅ 查询学期总评（不依赖 class_id）
     term_score = db.query(TermScore).filter(
         TermScore.student_username == username
-    ).first()
+    ).order_by(TermScore.generated_at.desc()).first()
     
     if not term_score:
         # 尝试计算
@@ -193,7 +201,7 @@ async def get_student_term_score(
             save_term_score(username, term_data)
             term_score = db.query(TermScore).filter(
                 TermScore.student_username == username
-            ).first()
+            ).order_by(TermScore.generated_at.desc()).first()
     
     if not term_score:
         return Response(data=None, message="暂无学期总评数据")

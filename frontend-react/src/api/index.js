@@ -416,6 +416,23 @@ export const downloadReport = (submissionId) =>
     api.download(`/api/review/${submissionId}/download-report`, `测评报告.docx`);
 
 
+// ============================================================
+// 🆕 重评和撤回发布接口
+// ============================================================
+
+/**
+ * 重新AI评分（教师控制）
+ * @param {number} submissionId - 提交ID
+ */
+export const reScoreSubmission = (submissionId) =>
+    api.post(`/api/review/${submissionId}/re-score`);
+
+/**
+ * 撤回已发布的成绩
+ * @param {number} submissionId - 提交ID
+ */
+export const unpublishSubmission = (submissionId) =>
+    api.post(`/api/review/unpublish/${submissionId}`);
 // ==================== 导出所有接口 ====================
 
 export { api };

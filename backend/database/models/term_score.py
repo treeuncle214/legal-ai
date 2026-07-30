@@ -15,7 +15,12 @@ class TermScore(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     student_username = Column(String(100), nullable=False, index=True)
     
+    class_id = Column(Integer, nullable=True)
     course_total_score = Column(Float, nullable=True)
+    level = Column(String(20), default="待评测")
+    
+    # 详细提交记录（JSON字符串）
+    details = Column(Text, nullable=True)
     
     A_ai_retrieval_score = Column(Float, nullable=True)
     B_critical_score = Column(Float, nullable=True)
@@ -62,12 +67,16 @@ class TermScore(Base):
     teacher_summary = Column(Text, nullable=True)
     
     generated_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, nullable=True)
 
     def to_dict(self):
         return {
             "id": self.id,
             "student_username": self.student_username,
+            "class_id": self.class_id,
             "course_total_score": self.course_total_score,
+            "level": self.level,
+            "details": self.details,
             "A_ai_retrieval_score": self.A_ai_retrieval_score,
             "B_critical_score": self.B_critical_score,
             "C_ethics_score": self.C_ethics_score,

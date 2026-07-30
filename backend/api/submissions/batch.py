@@ -4,6 +4,7 @@
 import asyncio
 import logging
 from datetime import datetime
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -48,6 +49,20 @@ async def trigger_batch_ai_score(
     
     all_submissions = get_submissions_by_task_all(task_id)
     
+    # 获取学生姓名映射
+    from backend.database.models import User
+    from backend.database.engine import SessionLocal
+    db_local = SessionLocal()
+    try:
+        student_names = {}
+        for sub in all_submissions:
+            username = sub.get("student_username")
+            if username and username not in student_names:
+                user = db_local.query(User).filter(User.username == username).first()
+                student_names[username] = user.display_name if user else username
+    finally:
+        db_local.close()
+    
     target_submissions = []
     for sub in all_submissions:
         if not sub.get("word_file_path") and not sub.get("final_output"):
@@ -75,7 +90,16 @@ async def trigger_batch_ai_score(
         "failed": 0,
         "status": "running",
         "started_at": datetime.now().isoformat(),
-        "details": []
+        "start_time": time.time(),
+        "current_processing": None,
+        "details": [
+            {
+                "username": sub.get("student_username"),
+                "name": student_names.get(sub.get("student_username"), sub.get("student_username")),
+                "status": "pending"
+            }
+            for sub in target_submissions
+        ]
     }
     
     semaphore = asyncio.Semaphore(min(concurrent_limit, 5))
@@ -87,7 +111,8 @@ async def trigger_batch_ai_score(
             teacher_username=current_user["username"],
             force_retry=force_retry,
             semaphore=semaphore,
-            task_id=task_id
+            task_id=task_id,
+            student_names=student_names
         )
     )
     
@@ -105,15 +130,28 @@ async def process_batch_scoring(
     teacher_username: str,
     force_retry: bool,
     semaphore: asyncio.Semaphore,
-    task_id: int
+    task_id: int,
+    student_names: dict
 ):
     """后台批量评分任务"""
-    async def score_one(submission):
+    total = len(submissions)
+    
+    async def score_one(submission, index):
+        username = submission.get("student_username")
+        name = student_names.get(username, username)
+        
         try:
+            # 更新进度 - 当前处理
+            _batch_progress_cache[task_id]["current_processing"] = f"{username}-{name}"
+            _batch_progress_cache[task_id]["details"][index]["status"] = "scoring"
+            
             if submission.get("ai_score_status") == "scoring":
-                return {"submission_id": submission["id"], "status": "skipped", "reason": "评分中"}
+                _batch_progress_cache[task_id]["details"][index]["status"] = "skipped"
+                return {"submission_id": submission["id"], "status": "skipped", "reason": "评分中", "username": username, "name": name}
+            
             if submission.get("ai_scored", False) and not force_retry:
-                return {"submission_id": submission["id"], "status": "skipped", "reason": "已评分"}
+                _batch_progress_cache[task_id]["details"][index]["status"] = "skipped"
+                return {"submission_id": submission["id"], "status": "skipped", "reason": "已评分", "username": username, "name": name}
             
             content = submission.get("word_content", "")
             if not content:
@@ -131,46 +169,50 @@ async def process_batch_scoring(
                     teacher_username=teacher_username
                 )
             
-            return {"submission_id": submission["id"], "status": "success"}
+            _batch_progress_cache[task_id]["details"][index]["status"] = "success"
+            return {"submission_id": submission["id"], "status": "success", "username": username, "name": name}
+            
         except Exception as e:
             logger.error(f"批量评分 - 提交 {submission.get('id')} 失败: {e}")
-            return {"submission_id": submission.get("id"), "status": "failed", "error": str(e)}
+            _batch_progress_cache[task_id]["details"][index]["status"] = "failed"
+            return {"submission_id": submission.get("id"), "status": "failed", "error": str(e), "username": username, "name": name}
     
-    tasks = [score_one(sub) for sub in submissions]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    # 创建所有任务
+    tasks = [score_one(sub, idx) for idx, sub in enumerate(submissions)]
     
-    success_count = 0
-    failed_count = 0
-    skipped_count = 0
-    details = []
+    # 逐个执行并更新进度
+    for idx, task in enumerate(tasks):
+        result = await task
+        # 更新进度缓存
+        cache = _batch_progress_cache.get(task_id, {})
+        if result.get("status") == "success":
+            cache["success"] = cache.get("success", 0) + 1
+        elif result.get("status") == "failed":
+            cache["failed"] = cache.get("failed", 0) + 1
+        elif result.get("status") == "skipped":
+            cache["skipped"] = cache.get("skipped", 0) + 1
+        cache["completed"] = idx + 1
+        cache["current_processing"] = None
+        
+        # 计算预计剩余时间
+        elapsed = time.time() - cache.get("start_time", time.time())
+        if idx + 1 > 0:
+            avg_time_per_item = elapsed / (idx + 1)
+            remaining = total - (idx + 1)
+            cache["estimated_remaining_seconds"] = int(avg_time_per_item * remaining)
+            cache["elapsed_seconds"] = int(elapsed)
+        
+        _batch_progress_cache[task_id] = cache
     
-    for result in results:
-        if isinstance(result, Exception):
-            failed_count += 1
-            details.append({"status": "error", "error": str(result)})
-        elif isinstance(result, dict):
-            if result.get("status") == "success":
-                success_count += 1
-            elif result.get("status") == "failed":
-                failed_count += 1
-            else:
-                skipped_count += 1
-            details.append(result)
-        else:
-            failed_count += 1
+    # 完成
+    cache = _batch_progress_cache.get(task_id, {})
+    cache["status"] = "completed" if cache.get("failed", 0) == 0 else "completed_with_errors"
+    cache["completed_at"] = datetime.now().isoformat()
+    cache["current_processing"] = None
+    cache["estimated_remaining_seconds"] = 0
+    _batch_progress_cache[task_id] = cache
     
-    _batch_progress_cache[task_id] = {
-        "total": len(submissions),
-        "completed": success_count + failed_count,
-        "success": success_count,
-        "failed": failed_count,
-        "skipped": skipped_count,
-        "status": "completed" if failed_count == 0 else "completed_with_errors",
-        "completed_at": datetime.now().isoformat(),
-        "details": details
-    }
-    
-    logger.info(f"批量评分完成: 成功 {success_count}, 失败 {failed_count}, 跳过 {skipped_count}")
+    logger.info(f"批量评分完成: 成功 {cache.get('success', 0)}, 失败 {cache.get('failed', 0)}, 跳过 {cache.get('skipped', 0)}")
 
 
 @router.get("/submissions/batch-progress/{task_id}")
@@ -189,6 +231,10 @@ async def get_batch_progress(
         "failed": 0,
         "skipped": 0,
         "status": "idle",
-        "message": "没有进行中的批量评分任务"
+        "message": "没有进行中的批量评分任务",
+        "estimated_remaining_seconds": 0,
+        "elapsed_seconds": 0,
+        "current_processing": None,
+        "details": []
     })
     return progress

@@ -1,9 +1,9 @@
-// frontend-react/src/pages/teacher/class/hooks/useClassManagement.js
 import { useState, useEffect } from 'react';
 import { message } from 'antd';
 import {
     getClasses, createClass, deleteClass, getUsers,
-    createUser, deleteUser, batchImportStudents, getTeachersForClass
+    createUser, deleteUser, batchImportStudents, getTeachersForClass,
+    addStudentToClass
 } from '@/api';
 
 export function useClassManagement() {
@@ -12,7 +12,6 @@ export function useClassManagement() {
     const [allTeachers, setAllTeachers] = useState([]);
     const [loading, setLoading] = useState(false);
 
-    // 获取当前用户
     const getCurrentUser = () => {
         try {
             const user = sessionStorage.getItem('teacherUser');
@@ -29,8 +28,21 @@ export function useClassManagement() {
     const fetchClasses = async () => {
         setLoading(true);
         try {
-            const data = await getClasses();
-            setClasses(data || []);
+            const response = await getClasses();
+            console.log('🔍 getClasses 返回:', response);
+
+            // ✅ 解包数据：response 可能是 {code, data} 或直接是数组
+            let classList = [];
+            if (Array.isArray(response)) {
+                classList = response;
+            } else if (response && response.data && Array.isArray(response.data)) {
+                classList = response.data;
+            } else if (response && response.code === 200 && response.data) {
+                classList = response.data;
+            }
+
+            console.log('🔍 解析后的班级列表:', classList);
+            setClasses(classList);
         } catch (error) {
             console.error('获取班级列表失败:', error);
             message.error('获取班级列表失败');
@@ -70,8 +82,19 @@ export function useClassManagement() {
     // ==================== 用户管理 ====================
     const fetchUsers = async () => {
         try {
-            const data = await getUsers();
-            setUsers(data || []);
+            const response = await getUsers();
+            console.log('🔍 getUsers 返回:', response);
+
+            let userList = [];
+            if (Array.isArray(response)) {
+                userList = response;
+            } else if (response && response.data && Array.isArray(response.data)) {
+                userList = response.data;
+            } else if (response && response.code === 200 && response.data) {
+                userList = response.data;
+            }
+
+            setUsers(userList);
         } catch (error) {
             console.error('获取用户列表失败:', error);
             message.error('获取用户列表失败');
@@ -88,15 +111,32 @@ export function useClassManagement() {
         }
     };
 
+    // ==================== 用户管理 ====================
     const handleCreateUser = async (userData) => {
         try {
+            // ✅ 先创建用户
             await createUser(
                 userData.username.trim(),
                 userData.password,
                 userData.role,
                 userData.display_name || userData.username
             );
-            message.success(`用户 "${userData.username}" 创建成功`);
+
+            // ✅ 如果选择了班级且是学生，将学生添加到班级
+            if (userData.class_id && userData.role === 'student') {
+                try {
+                    // 导入 addStudentToClass API
+                    const { addStudentToClass } = await import('@/api');
+                    await addStudentToClass(userData.class_id, userData.username.trim());
+                    message.success(`用户 "${userData.username}" 创建成功并已加入班级`);
+                } catch (classError) {
+                    console.warn('添加班级失败:', classError);
+                    message.warning(`用户 "${userData.username}" 创建成功，但加入班级失败`);
+                }
+            } else {
+                message.success(`用户 "${userData.username}" 创建成功`);
+            }
+
             await fetchUsers();
             return { success: true };
         } catch (error) {

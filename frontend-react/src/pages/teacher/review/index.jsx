@@ -21,6 +21,8 @@ export default function TeacherReview() {
         handleReviewSubmit,
         handlePublish,
         handleBatchPublish,
+        handleReScore,
+        handleUnpublish,
         openWordDocument
     } = useReview();
 
@@ -39,21 +41,12 @@ export default function TeacherReview() {
         fetchSubmissions(selectedTaskId);
     };
 
-    const handleAIScoreSuccess = () => {
-        fetchSubmissions(selectedTaskId);
-    };
-
-    const handleAIScoreError = (error) => {
-        console.error('AI评分失败:', error);
-    };
-
     const handleBatchScoreSuccess = () => {
         setBatchModalVisible(false);
-        message.success('批量AI评分已启动，请稍后刷新查看结果');
+        message.success('批量AI评分已启动');
         fetchSubmissions(selectedTaskId);
     };
 
-    // 获取待评分的提交数量
     const getPendingCount = () => {
         return submissions.filter(s =>
             !s.ai_scored &&
@@ -89,14 +82,13 @@ export default function TeacherReview() {
                 )}
             </div>
 
+            {/* 移除 onAIScoreSuccess 和 onAIScoreError */}
             <ReviewTable
                 submissions={submissions}
                 loading={loading}
                 onReview={handleReview}
                 onPublish={handlePublish}
                 onOpenWord={openWordDocument}
-                onAIScoreSuccess={handleAIScoreSuccess}
-                onAIScoreError={handleAIScoreError}
             />
 
             <ReviewModal
@@ -106,6 +98,8 @@ export default function TeacherReview() {
                 dimensions={dimensions}
                 onReviewSubmit={handleReviewSubmit}
                 onPublish={handlePublish}
+                onReScore={handleReScore}
+                onUnpublish={handleUnpublish}
                 onOpenWord={openWordDocument}
             />
 

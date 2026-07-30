@@ -1,4 +1,3 @@
-# backend/api/review.py
 """
 教师审批 API
 """
@@ -16,7 +15,7 @@ from backend.database import review_submission, get_submission
 from backend.database.models import Submission
 from backend.database.submissions import publish_submission_score
 from backend.database.submissions import get_submissions_by_task_all
-from backend.database.submissions.scoring import save_evaluation_report, get_evaluation_report
+from backend.database.submissions.scoring import save_evaluation_report, get_evaluation_report, update_ai_score_status
 from backend.database.tasks import get_task as get_task_db
 from backend.database.engine import SessionLocal
 from backend.config import SCORING_DIMENSIONS
@@ -249,7 +248,6 @@ async def get_pending_reviews(
 
 
 # ==================== 按任务查看提交 ====================
-
 @router.get("/review/task/{task_id}")
 async def get_task_reviews(
     task_id: int,
@@ -289,6 +287,7 @@ async def get_task_reviews(
         # ✅ 为每个提交查询指标级评分和满分
         from backend.database.models import SubmissionScore, TaskRubricIndicator, TaskRubric
         from backend.database.engine import SessionLocal
+        from backend.database.models import User  # ✅ 导入 User 模型
         
         db_local = SessionLocal()
         try:
@@ -303,6 +302,10 @@ async def get_task_reviews(
                     max_scores[ind.indicator_key] = ind.max_score
             
             for sub in submissions:
+                # ✅ 获取学生姓名
+                student_user = db_local.query(User).filter(User.username == sub["student_username"]).first()
+                sub["student_name"] = student_user.display_name if student_user else sub["student_username"]
+                
                 scores = db_local.query(SubmissionScore).filter(
                     SubmissionScore.submission_id == sub["id"]
                 ).all()
@@ -331,7 +334,6 @@ async def get_task_reviews(
                     if final_score is not None and float(final_score) > 0:
                         final_scores[key] = float(final_score)
                     else:
-                        # 如果没有调整分，使用 AI 原始分
                         final_scores[key] = sub.get(f"score_{key}", 0)
                 sub["final_scores"] = final_scores
                 
@@ -345,6 +347,7 @@ async def get_task_reviews(
         return submissions
     finally:
         conn.close()
+
 # ==================== 测评报告 API ====================
 
 @router.get("/review/{submission_id}/report")
@@ -591,3 +594,138 @@ async def download_report(
         )
     finally:
         db_local.close()
+
+
+# ==================== 🆕 撤回发布 ====================
+
+@router.post("/review/unpublish/{submission_id}", response_model=Response)
+async def unpublish_score(
+    submission_id: int,
+    current_user: dict = Depends(get_current_teacher),
+    db: Session = Depends(get_db)
+):
+    """
+    教师撤回已发布的成绩
+    - 将 score_published 重置为 0
+    - 保留 is_reviewed = 1（已审批状态）
+    - 教师可以重新修改评分后再次发布
+    """
+    from backend.database.engine import SessionLocal
+    from backend.database.models import Submission
+    
+    # 获取提交信息
+    submission = get_submission(submission_id)
+    if not submission:
+        raise HTTPException(status_code=404, detail="提交记录不存在")
+    
+    # 验证提交对应的任务属于当前教师
+    task = get_task_db(submission.get("task_id"))
+    teacher_class_ids = get_teacher_class_ids(current_user)
+    if task and task.get("class_id") not in teacher_class_ids:
+        raise HTTPException(status_code=403, detail="无权操作此提交")
+    
+    # 检查是否已发布
+    if submission.get("score_published") != 1:
+        raise HTTPException(status_code=400, detail="该成绩尚未发布，无需撤回")
+    
+    # 检查是否已审批
+    if submission.get("is_reviewed") != 1:
+        raise HTTPException(status_code=400, detail="该提交尚未审批，无法撤回发布")
+    
+    # 使用 SQLAlchemy 直接更新
+    db_local = SessionLocal()
+    try:
+        submission_obj = db_local.query(Submission).filter(Submission.id == submission_id).first()
+        if not submission_obj:
+            raise HTTPException(status_code=404, detail="提交记录不存在")
+        
+        submission_obj.score_published = 0
+        db_local.commit()
+        
+        logger.info(f"成绩撤回成功: submission_id={submission_id}, 教师: {current_user['username']}")
+        return Response(message="成绩已撤回，可重新修改后再次发布")
+    except Exception as e:
+        db_local.rollback()
+        logger.error(f"撤回成绩失败: {e}")
+        raise HTTPException(status_code=500, detail=f"撤回失败: {str(e)}")
+    finally:
+        db_local.close()
+
+
+# ==================== 🆕 重新AI评分（已审批未发布时触发） ====================
+
+@router.post("/review/{submission_id}/re-score")
+async def re_score_submission(
+    submission_id: int,
+    force_retry: bool = True,
+    current_user: dict = Depends(get_current_teacher),
+    db: Session = Depends(get_db)
+):
+    """
+    重新AI评分（教师控制）
+    - 仅当 score_published = 0（未发布）时允许
+    - 重评后 is_reviewed 重置为 0，状态变为「已AI评分，待审批」
+    - 教师可再次进入审批界面修改
+    """
+    from backend.database.engine import SessionLocal
+    from backend.database.models import Submission
+    from backend.api.submissions.scoring import perform_scoring
+    import asyncio
+    
+    # 获取提交信息
+    submission = get_submission(submission_id)
+    if not submission:
+        raise HTTPException(status_code=404, detail="提交记录不存在")
+    
+    # 验证提交对应的任务属于当前教师
+    task = get_task_db(submission.get("task_id"))
+    teacher_class_ids = get_teacher_class_ids(current_user)
+    if task and task.get("class_id") not in teacher_class_ids:
+        raise HTTPException(status_code=403, detail="无权操作此提交")
+    
+    # 检查是否已发布
+    if submission.get("score_published") == 1:
+        raise HTTPException(status_code=400, detail="已发布的成绩不能重新AI评分，请先撤回发布")
+    
+    # 检查是否正在评分中
+    if submission.get("ai_score_status") == "scoring":
+        raise HTTPException(status_code=409, detail="该提交正在评分中，请稍后")
+    
+    # 准备内容
+    content = submission.get("word_content", "")
+    if not content:
+        content = f"【AI交互记录】\n{submission.get('ai_interaction_log', '')}\n\n【作业正文】\n{submission.get('final_output', '')}"
+    
+    # ✅ 重评前重置审批状态
+    db_local = SessionLocal()
+    try:
+        submission_obj = db_local.query(Submission).filter(Submission.id == submission_id).first()
+        if submission_obj:
+            submission_obj.is_reviewed = 0
+            submission_obj.reviewed_by = None
+            submission_obj.reviewed_at = None
+            submission_obj.ai_score_status = "pending"  # 重置为待评分状态
+            db_local.commit()
+            logger.info(f"重置审批状态: submission_id={submission_id}")
+    finally:
+        db_local.close()
+    
+    # 更新状态为评分中
+    update_ai_score_status(submission_id, "scoring")
+    
+    # 异步执行AI评分
+    asyncio.create_task(
+        perform_scoring(
+            submission_id=submission_id,
+            task_dict=task,
+            content=content,
+            submit_type=submission.get("submit_type", "word"),
+            teacher_username=current_user["username"]
+        )
+    )
+    
+    return {
+        "success": True,
+        "submission_id": submission_id,
+        "message": "已重新触发AI评分，评分完成后请重新审批"
+    }

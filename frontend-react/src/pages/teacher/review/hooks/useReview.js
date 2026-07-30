@@ -1,8 +1,6 @@
-// frontend-react/src/pages/teacher/review/hooks/useReview.js
-
 import { useState, useEffect, useCallback } from 'react';
 import { message } from 'antd';
-import { getTasks, getTaskReviews, reviewSubmission, publishScore, publishBatchScores } from '@/api';
+import {getTasks, getTaskReviews, reviewSubmission, publishScore, publishBatchScores, reScoreSubmission,unpublishSubmission} from '@/api';
 import { getDimensions } from '@/api';
 
 export const useReview = () => {
@@ -92,7 +90,7 @@ export const useReview = () => {
             await reviewSubmission(submissionId, {
                 scores: dimensionScores,
                 teacher_comment: comment,
-                indicator_scores: indicatorScores  // ✅ 新增：传递修改后的指标分数
+                indicator_scores: indicatorScores
             });
             message.success('审批完成');
             await fetchSubmissions(selectedTaskId);
@@ -110,7 +108,6 @@ export const useReview = () => {
         try {
             await publishScore(submissionId);
             message.success('成绩发布成功');
-            // 刷新列表
             await fetchSubmissions(selectedTaskId);
             return true;
         } catch (error) {
@@ -166,6 +163,39 @@ export const useReview = () => {
             setPublishing(false);
         }
     }, [selectedTaskId, submissions]);
+
+    // ========== 🆕 重新AI评分 ==========
+    const handleReScore = useCallback(async (submissionId) => {
+        try {
+            const result = await reScoreSubmission(submissionId);
+            const messageText = result?.message || '已重新触发AI评分，完成后请重新审批';
+            message.success(messageText);
+            await fetchSubmissions(selectedTaskId);
+            return true;
+        } catch (error) {
+            console.error('重评失败:', error);
+            const errorMsg = error.response?.data?.detail || error.message || '重评失败，请重试';
+            message.error(errorMsg);
+            return false;
+        }
+    }, [selectedTaskId, fetchSubmissions]);
+
+    // ========== 🆕 撤回发布 ==========
+    const handleUnpublish = useCallback(async (submissionId) => {
+        try {
+            const result = await unpublishSubmission(submissionId);
+            const messageText = result?.message || '成绩已撤回，可重新修改后发布';
+            message.success(messageText);
+            await fetchSubmissions(selectedTaskId);
+            return true;
+        } catch (error) {
+            console.error('撤回失败:', error);
+            const errorMsg = error.response?.data?.detail || error.message || '撤回失败，请重试';
+            message.error(errorMsg);
+            return false;
+        }
+    }, [selectedTaskId, fetchSubmissions]);
+
 
     // 打开Word文档
     const openWordDocument = useCallback(async (filePath) => {
@@ -244,6 +274,8 @@ export const useReview = () => {
         handleReviewSubmit,
         handlePublish,
         handleBatchPublish,
+        handleReScore,      // 🆕
+        handleUnpublish,    // 🆕
         openWordDocument
     };
 };
