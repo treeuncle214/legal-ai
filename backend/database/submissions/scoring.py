@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from backend.database.engine import get_db_connection, SessionLocal
+from backend.database.engine import SessionLocal
 from backend.database.models import Submission, SubmissionScore
 
 logger = logging.getLogger(__name__)
@@ -100,29 +100,23 @@ def update_ai_score_status(
 
 
 def get_ai_score_status(submission_id: int) -> dict:
-    conn = get_db_connection()
+    db = SessionLocal()
     try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT ai_score_status, ai_score_error, ai_scored, ai_scored_at, ai_scored_by
-            FROM submissions 
-            WHERE id = ?
-        """, (submission_id,))
-        row = cursor.fetchone()
-        if row:
+        submission = db.query(Submission).filter(Submission.id == submission_id).first()
+        if submission:
             return {
-                "ai_score_status": row[0],
-                "ai_score_error": row[1],
-                "ai_scored": bool(row[2]) if row[2] is not None else False,
-                "ai_scored_at": row[3],
-                "ai_scored_by": row[4]
+                "ai_score_status": submission.ai_score_status,
+                "ai_score_error": submission.ai_score_error,
+                "ai_scored": bool(submission.ai_scored) if submission.ai_scored is not None else False,
+                "ai_scored_at": submission.ai_scored_at,
+                "ai_scored_by": submission.ai_scored_by
             }
         return None
     except Exception as e:
         logger.error(f"获取提交 {submission_id} AI评分状态失败: {e}")
         return None
     finally:
-        conn.close()
+        db.close()
 
 
 def review_submission(submission_id: int, review_data: dict = None, 
@@ -133,6 +127,7 @@ def review_submission(submission_id: int, review_data: dict = None,
                       **kwargs):
     """
     教师审批提交
+    ✅ 核心逻辑：只保存指标分数，维度分数由后端重新计算
     """
     print("=" * 60)
     print(f"🔍 review_submission 被调用")
@@ -149,106 +144,165 @@ def review_submission(submission_id: int, review_data: dict = None,
             logger.error(f"提交 {submission_id} 不存在")
             return
         
+        # ========== 1. 更新审批状态 ==========
         submission.is_reviewed = 1
         submission.reviewed_at = datetime.now()
         
-        if review_data is None:
-            review_data = {}
-        
-        comment = teacher_comment or review_data.get("teacher_comment")
+        comment = teacher_comment or review_data.get("teacher_comment") if review_data else None
         if comment:
             submission.teacher_comment = comment
         
-        reviewer = teacher_username or teacher_by or reviewed_by or review_data.get("reviewed_by")
+        reviewer = teacher_username or teacher_by or reviewed_by
         if reviewer:
             submission.reviewed_by = reviewer
         
-        # ========== 保存维度分数 ==========
-        scores = scores_dict or review_data.get("scores", {})
-        if scores:
-            for key, value in scores.items():
-                if key in ['ai_retrieval', 'critical', 'ethics', 'integration']:
-                    setattr(submission, f"final_score_{key}", float(value))
-                    logger.info(f"✅ 保存 final_score_{key} = {value}")
-                elif key.startswith("final_score_"):
-                    setattr(submission, key, float(value))
-                    logger.info(f"✅ 保存 {key} = {value}")
-            
-            # ========== ✅ 计算并保存总分 ==========
-            # ✅ 正确逻辑：所有指标得分直接相加
-            indicator_scores_data = indicator_scores or review_data.get("indicator_scores", {})
-            
-            if indicator_scores_data:
-                # 所有指标得分直接相加
-                total = sum(indicator_scores_data.values())
-                submission.total_score = round(total, 2)
-                logger.info(f"✅ 保存总分: {submission.total_score} (由指标得分相加: {indicator_scores_data})")
-            else:
-                # 降级方案：从已保存的指标分数计算（如果 indicator_scores 为空）
-                existing_scores = db.query(SubmissionScore).filter(
-                    SubmissionScore.submission_id == submission_id
-                ).all()
-                if existing_scores:
-                    total = sum([s.score for s in existing_scores])
-                    submission.total_score = round(total, 2)
-                    logger.info(f"✅ 保存总分: {submission.total_score} (从数据库指标计算)")
-                else:
-                    # 如果连指标都没有，使用维度得分的平均（兼容旧数据）
-                    valid_scores = []
-                    for key in ['ai_retrieval', 'critical', 'ethics', 'integration']:
-                        value = scores.get(key, 0)
-                        if value > 0:
-                            valid_scores.append(value)
-                    if valid_scores:
-                        total = sum(valid_scores) / len(valid_scores)
-                        submission.total_score = round(total, 2)
-                        logger.info(f"✅ 保存总分: {submission.total_score} (维度平均-降级)")
-                    else:
-                        submission.total_score = 0
-                        logger.info(f"✅ 无有效得分，总分设为 0")
+        # ========== 2. 处理指标分数 ==========
+        indicator_scores_data = indicator_scores or (review_data.get("indicator_scores") if review_data else {})
         
-        # ========== 更新指标分数 ==========
-        indicator_scores_data = indicator_scores or review_data.get("indicator_scores", {})
+        # 如果没有直接的 indicator_scores，尝试从 scores_dict 中提取指标分数
+        if not indicator_scores_data and scores_dict:
+            # 兼容旧版本：如果 scores_dict 中包含 A1, A2, ... 这样的指标key
+            for key in scores_dict:
+                if key in ['A1','A2','A3','A4','B1','B2','B3','C1','C2','C3','D1','D2','D3']:
+                    indicator_scores_data[key] = scores_dict[key]
         
+        # ========== 3. 获取任务的满分信息和启用指标 ==========
+        from backend.database.models import TaskRubric, TaskRubricIndicator
+        from backend.database.tasks import get_task as get_task_db
+        from backend.config import SCORING_DIMENSIONS
+        from backend.core.calculators.grade_mapper import score_to_level
+        
+        task = get_task_db(submission.task_id)
+        
+        # 获取启用指标
+        enabled_indicators = task.get("enabled_indicators", []) if task else []
+        if isinstance(enabled_indicators, str):
+            enabled_indicators = [i.strip() for i in enabled_indicators.split(',') if i.strip()]
+        
+        # 获取指标满分
+        indicator_max_scores = {}
+        task_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == submission.task_id).first()
+        if task_rubric:
+            indicators = db.query(TaskRubricIndicator).filter(
+                TaskRubricIndicator.task_rubric_id == task_rubric.id
+            ).all()
+            for ind in indicators:
+                indicator_max_scores[ind.indicator_key] = ind.max_score
+        
+        # ========== 4. 更新指标分数到 submission_scores 表 ==========
         if indicator_scores_data:
             existing_scores = db.query(SubmissionScore).filter(
                 SubmissionScore.submission_id == submission_id
             ).all()
-            
             existing_dict = {s.indicator_key: s for s in existing_scores}
             
             for key, value in indicator_scores_data.items():
-                if value >= 8.5:
-                    level = "优"
-                elif value >= 7.0:
-                    level = "良"
-                elif value >= 5.5:
-                    level = "合格"
-                else:
-                    level = "不合格"
+                if value is None:
+                    continue
+                
+                # 计算等级
+                max_score = indicator_max_scores.get(key, 10)
+                percent = (value / max_score * 100) if max_score > 0 else 0
+                level = score_to_level(percent)
                 
                 if key in existing_dict:
                     existing_dict[key].score = float(value)
                     existing_dict[key].level = level
                     existing_dict[key].comment = "教师调整"
-                    logger.info(f"✅ 更新指标 {key} = {value}")
                 else:
                     new_score = SubmissionScore(
                         submission_id=submission_id,
                         indicator_key=key,
                         score=float(value),
+                         ai_original_score=float(value),
                         level=level,
                         comment="教师调整"
                     )
                     db.add(new_score)
-                    logger.info(f"✅ 新增指标 {key} = {value}")
+                logger.info(f"✅ 保存指标 {key} = {value} (满分{max_score})")
+        
+        # ========== 5. 重新计算维度分数（百分制） ==========
+        # 获取所有指标分数（包括刚更新的）
+        all_scores = db.query(SubmissionScore).filter(
+            SubmissionScore.submission_id == submission_id
+        ).all()
+        indicator_score_dict = {s.indicator_key: s.score for s in all_scores}
+        
+        dimension_scores = {}
+        for dim in SCORING_DIMENSIONS:
+            key = dim["key"]
+            indicators = dim.get("sub_indicators", [])
+            
+            if indicators:
+                dim_actual = 0
+                dim_max = 0
+                has_score = False
+                
+                for ind in indicators:
+                    ind_key = ind["key"]
+                    # 只计算启用且已评分的指标
+                    if enabled_indicators and ind_key not in enabled_indicators:
+                        continue
+                    if ind_key in indicator_score_dict:
+                        score = indicator_score_dict[ind_key]
+                        if score > 0:
+                            dim_actual += score
+                            dim_max += indicator_max_scores.get(ind_key, 10)
+                            has_score = True
+                
+                if has_score and dim_max > 0:
+                    dimension_scores[key] = round((dim_actual / dim_max) * 100, 2)
+                else:
+                    dimension_scores[key] = 0.0
+            else:
+                dimension_scores[key] = 0.0
+        
+        print(f"🔍 重新计算的维度分数: {dimension_scores}")
+        
+        # ========== 6. 保存维度分数到 submissions 表 ==========
+        for key, value in dimension_scores.items():
+            setattr(submission, f"final_score_{key}", value)
+            logger.info(f"✅ 保存 final_score_{key} = {value}")
+        
+        # ========== 7. 计算并保存总分 ==========
+        # ✅ 总分 = 所有指标得分直接相加
+        total_score = 0
+        for key, score in indicator_score_dict.items():
+            # 只计算启用指标
+            if not enabled_indicators or key in enabled_indicators:
+                total_score += score
+        
+        submission.total_score = round(total_score, 2)
+        logger.info(f"✅ 保存总分: {submission.total_score}")
+        
+        # ========== 8. 如果前端传了维度分数但没传指标分数（兼容旧版本） ==========
+        if not indicator_scores_data and scores_dict:
+            # 检查是否传了维度分数（ai_retrieval, critical, ...）
+            dim_keys = ['ai_retrieval', 'critical', 'ethics', 'integration']
+            has_dimension_scores = any(k in scores_dict for k in dim_keys)
+            
+            if has_dimension_scores and not indicator_scores_data:
+                # 直接使用前端传来的维度分数
+                for key in dim_keys:
+                    if key in scores_dict:
+                        setattr(submission, f"final_score_{key}", float(scores_dict[key]))
+                logger.info(f"⚠️ 兼容模式：使用前端传来的维度分数")
+                
+                # 计算总分
+                valid_scores = [float(scores_dict[k]) for k in dim_keys if k in scores_dict and scores_dict[k] > 0]
+                if valid_scores:
+                    submission.total_score = round(sum(valid_scores) / len(valid_scores), 2)
         
         db.commit()
-        logger.info(f"提交 {submission_id} 审批完成，审批人: {reviewer}")
+        logger.info(f"提交 {submission_id} 审批完成")
+        return True
+        
     except Exception as e:
         logger.error(f"审批提交 {submission_id} 失败: {e}")
         db.rollback()
-        raise
+        import traceback
+        traceback.print_exc()
+        return False
     finally:
         db.close()
 

@@ -23,9 +23,7 @@ from backend.database.submissions.scoring import (
 )
 from backend.database.submissions.validators import (
     get_submission_count,
-    get_submission_count_v2,
-    can_submit,
-    can_submit_v2
+    can_submit
 )
 from backend.database.submissions.queries import (
     get_published_submissions_for_student,
@@ -51,9 +49,7 @@ __all__ = [
     "review_submission",
     "publish_submission_score",
     "get_submission_count",
-    "get_submission_count_v2",
     "can_submit",
-    "can_submit_v2",
     "get_published_submissions_for_student",
     "get_student_submissions_without_scores",
     "get_submission_for_review",

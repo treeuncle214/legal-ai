@@ -11,7 +11,7 @@ import io
 from datetime import datetime
 from urllib.parse import quote
 
-from backend.database import get_db
+from backend.api.deps import get_db
 from backend.database.models import User, Task, Submission, SubmissionScore
 from backend.database.classes import get_class_students, get_class
 from backend.api.deps import get_current_user, get_teacher_class_ids

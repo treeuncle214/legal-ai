@@ -61,37 +61,16 @@ def score_exercise(task: Dict, submission: Dict) -> Dict:
     for key, score in parsed["indicator_scores"].items():
         max_score = indicator_max_scores.get(key, 10)
         raw_score = round(score / 100 * max_score, 2)
-         # ✅ 添加调试日志
         print(f"🔍 指标 {key}: AI评分={score}, max_score={max_score}, raw_score={raw_score}")
         final_indicator_scores[key] = max(0.0, min(raw_score, float(max_score)))
         print(f"🔍 指标 {key}: 最终得分={final_indicator_scores[key]}")
-    # ✅ 修复：从 backend.config 导入 SCORING_DIMENSIONS
-    from backend.config import SCORING_DIMENSIONS
     
-    # 计算维度得分（使用实际满分）
-    dimension_scores = {}
-    for dim in SCORING_DIMENSIONS:
-        key = dim["key"]
-        sub_indicators = dim.get("sub_indicators", [])
-        if sub_indicators:
-            dim_total = 0.0
-            dim_max = 0.0
-            has_score = False
-            for ind in sub_indicators:
-                ind_key = ind["key"]
-                if not enabled_indicators or ind_key in enabled_indicators:
-                    score = final_indicator_scores.get(ind_key, 0.0)
-                    max_score = indicator_max_scores.get(ind_key, 10.0)
-                    dim_total += score
-                    dim_max += max_score
-                    if score > 0:
-                        has_score = True
-            if has_score and dim_max > 0:
-                dimension_scores[key] = round((dim_total / dim_max) * 100, 2)
-            else:
-                dimension_scores[key] = 0.0
-        else:
-            dimension_scores[key] = 0.0
+    # ✅ 使用 dimension_calculator 的 calculate_dimension_scores 函数
+    dimension_scores = calculate_dimension_scores(
+        final_indicator_scores,
+        enabled_indicators,
+        indicator_max_scores
+    )
     
     dimension_levels = {dim: score_to_level(score) for dim, score in dimension_scores.items()}
     
@@ -127,7 +106,7 @@ def score_final_report(task: Dict, content: str) -> Dict:
     对期末报告进行AI评分
     """
     prompt = build_final_report_prompt(task, content)
-    response = call_deepseek_api(prompt)
+    response = call_deepseek_api_json(prompt)
     
     if response is None:
         return generate_fallback_report_score(task, content)

@@ -5,7 +5,7 @@
 import logging
 from typing import Dict, List, Optional
 from sqlalchemy import desc, func
-from backend.database.engine import SessionLocal, get_db_connection
+from backend.database.engine import SessionLocal
 from backend.database.models import Submission, SubmissionScore, Task,User, Class, UserClass
 from backend.config import SCORING_DIMENSIONS, get_dimension_name
 

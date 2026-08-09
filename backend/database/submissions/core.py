@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 import logging
 
-from backend.database.engine import get_db_connection
+from sqlalchemy import text
 from backend.database.engine import SessionLocal
 from backend.database.models import Submission
 from backend.config import SCORING_DIMENSIONS
@@ -27,258 +27,195 @@ def add_submission(
     ai_score_status: str = "pending",
     is_reviewed: int = 0,
     original_filenames: str = None,
-    ai_scored: bool = False,  # 🆕 新增参数
-    ai_scored_at: str = None,  # 🆕 新增参数
-    ai_scored_by: str = None   # 🆕 新增参数
+    ai_scored: bool = False,
+    ai_scored_at: str = None,
+    ai_scored_by: str = None
 ) -> int:
     """添加提交记录"""
-    conn = get_db_connection()
+    db = SessionLocal()
     try:
-        cursor = conn.cursor()
-        submit_time = datetime.now().isoformat()
+        submit_time = datetime.now()
 
-        if word_file_path is None:
-            word_file_path = ""
-        if word_content is None:
-            word_content = ""
-        if original_filenames is None:
-            original_filenames = ""
-
-        # 检查字段是否存在
-        cursor.execute("PRAGMA table_info(submissions)")
-        columns = [col[1] for col in cursor.fetchall()]
-        
-        # 基础字段
-        base_fields = [
-            'task_id', 'student_username', 'process_log', 'ai_interaction_log',
-            'final_output', 'tools_used', 'submit_type', 'word_file_path', 'word_content',
-            'submit_time', 'ai_score_status', 'is_reviewed', 'original_filenames'
-        ]
-        base_values = [
-            task_id, student_username, process_log, ai_interaction_log,
-            final_output, tools_used, submit_type, word_file_path, word_content,
-            submit_time, ai_score_status, is_reviewed, original_filenames
-        ]
-        
-        # 检查 ai_scored 字段是否存在
-        if 'ai_scored' in columns:
-            base_fields.append('ai_scored')
-            base_values.append(1 if ai_scored else 0)
-        
-        # 检查 ai_scored_at 字段是否存在
-        if 'ai_scored_at' in columns and ai_scored_at:
-            base_fields.append('ai_scored_at')
-            base_values.append(ai_scored_at)
-        
-        # 检查 ai_scored_by 字段是否存在
-        if 'ai_scored_by' in columns and ai_scored_by:
-            base_fields.append('ai_scored_by')
-            base_values.append(ai_scored_by)
-        
-        # 构建 SQL
-        placeholders = ','.join(['?'] * len(base_fields))
-        fields_str = ','.join(base_fields)
-        
-        cursor.execute(f"""
-            INSERT INTO submissions ({fields_str})
-            VALUES ({placeholders})
-        """, tuple(base_values))
-        
-        conn.commit()
-        return cursor.lastrowid
+        submission = Submission(
+            task_id=task_id,
+            student_username=student_username,
+            process_log=process_log,
+            ai_interaction_log=ai_interaction_log,
+            final_output=final_output,
+            tools_used=tools_used,
+            submit_type=submit_type,
+            word_file_path=word_file_path or "",
+            word_content=word_content or "",
+            original_filenames=original_filenames or "",
+            submit_time=submit_time,
+            ai_score_status=ai_score_status,
+            is_reviewed=is_reviewed,
+            ai_scored=ai_scored,
+            ai_scored_at=ai_scored_at,
+            ai_scored_by=ai_scored_by
+        )
+        db.add(submission)
+        db.commit()
+        db.refresh(submission)
+        return submission.id
     except Exception as e:
+        db.rollback()
         logger.error(f"添加提交记录失败: {e}")
         raise
     finally:
-        conn.close()
+        db.close()
 
 
 def get_submission(submission_id: int) -> Optional[Dict]:
-    """获取单条提交记录（原始dict）"""
-    conn = get_db_connection()
+    """获取单条提交记录"""
+    db = SessionLocal()
     try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM submissions WHERE id = ?", (submission_id,))
-        row = cursor.fetchone()
-        if row:
-            columns = [description[0] for description in cursor.description]
-            return dict(zip(columns, row))
+        submission = db.query(Submission).filter(Submission.id == submission_id).first()
+        if submission:
+            return {c.name: getattr(submission, c.name) for c in submission.__table__.columns}
         return None
     except Exception as e:
         logger.error(f"获取提交记录失败: {e}")
         return None
     finally:
-        conn.close()
+        db.close()
 
 
 def delete_submission(submission_id: int):
     """删除提交记录"""
-    conn = get_db_connection()
+    db = SessionLocal()
     try:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM submissions WHERE id = ?", (submission_id,))
-        conn.commit()
-        logger.info(f"已删除提交记录 {submission_id}")
+        submission = db.query(Submission).filter(Submission.id == submission_id).first()
+        if submission:
+            db.delete(submission)
+            db.commit()
+            logger.info(f"已删除提交记录 {submission_id}")
     except Exception as e:
+        db.rollback()
         logger.error(f"删除提交记录失败: {e}")
         raise
     finally:
-        conn.close()
+        db.close()
 
 
 def get_submission_by_file_path(filename: str) -> Optional[Dict]:
     """根据存储的文件名查找提交记录"""
-    conn = get_db_connection()
+    db = SessionLocal()
     try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, word_file_path, original_filenames 
-            FROM submissions 
-            WHERE word_file_path LIKE ?
-        """, (f"%{filename}%",))
-        row = cursor.fetchone()
-        if row:
-            return {"id": row[0], "word_file_path": row[1], "original_filenames": row[2]}
+        submission = db.query(Submission).filter(
+            Submission.word_file_path.like(f"%{filename}%")
+        ).first()
+        if submission:
+            return {
+                "id": submission.id,
+                "word_file_path": submission.word_file_path,
+                "original_filenames": submission.original_filenames
+            }
         return None
     except Exception as e:
         logger.error(f"查询提交记录失败: {e}")
         return None
     finally:
-        conn.close()
+        db.close()
 
 
 def get_submissions_by_student_v2(student_username: str) -> List[Dict]:
     """获取学生的所有提交记录"""
-    conn = get_db_connection()
+    db = SessionLocal()
     try:
-        cursor = conn.cursor()
-        cursor.execute(
-            """SELECT s.*, t.title as task_title 
-               FROM submissions s 
-               JOIN tasks t ON s.task_id = t.id 
-               WHERE s.student_username = ? 
-               ORDER BY s.submit_time DESC""",
-            (student_username,)
-        )
-        rows = cursor.fetchall()
-        columns = [description[0] for description in cursor.description]
-        return [dict(zip(columns, row)) for row in rows]
+        from backend.database.models import Task
+        submissions = db.query(Submission).filter(
+            Submission.student_username == student_username
+        ).order_by(Submission.submit_time.desc()).all()
+
+        results = []
+        for s in submissions:
+            task = db.query(Task).filter(Task.id == s.task_id).first()
+            d = {c.name: getattr(s, c.name) for c in s.__table__.columns}
+            d["task_title"] = task.title if task else None
+            results.append(d)
+        return results
     except Exception as e:
         logger.error(f"获取学生提交记录失败: {e}")
         return []
     finally:
-        conn.close()
+        db.close()
 
 
 def get_submissions_by_task_v2(task_id: int) -> List[Dict]:
     """获取某任务的所有提交记录"""
-    conn = get_db_connection()
+    db = SessionLocal()
     try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT s.*, u.display_name as student_name 
-            FROM submissions s 
-            JOIN users u ON s.student_username = u.username 
-            WHERE s.task_id = ? 
-            ORDER BY s.submit_time DESC
-        """, (task_id,))
-        rows = cursor.fetchall()
-        columns = [description[0] for description in cursor.description]
-        return [dict(zip(columns, row)) for row in rows]
+        from backend.database.models import User
+        submissions = db.query(Submission).filter(
+            Submission.task_id == task_id
+        ).order_by(Submission.submit_time.desc()).all()
+
+        results = []
+        for s in submissions:
+            user = db.query(User).filter(User.username == s.student_username).first()
+            d = {c.name: getattr(s, c.name) for c in s.__table__.columns}
+            d["student_name"] = user.display_name if user else s.student_username
+            results.append(d)
+        return results
     except Exception as e:
         logger.error(f"获取任务提交记录失败: {e}")
         return []
     finally:
-        conn.close()
+        db.close()
 
 
 def get_submissions_by_task(task_id: int) -> List[Dict]:
-    """
-    获取某任务下每个学生的最新提交记录（教师端使用）
-    只返回最新一条提交（按 id 最大）
-    """
-    conn = get_db_connection()
+    """获取某任务下每个学生的最新提交记录"""
+    db = SessionLocal()
     try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT s.*, u.display_name as student_name 
-            FROM submissions s
-            JOIN users u ON s.student_username = u.username
-            WHERE s.id IN (
-                SELECT MAX(id) 
-                FROM submissions 
-                WHERE task_id = ? 
-                GROUP BY student_username
-            )
-            ORDER BY s.submit_time DESC
-        """, (task_id,))
-        rows = cursor.fetchall()
-        columns = [description[0] for description in cursor.description]
-        return [dict(zip(columns, row)) for row in rows]
+        from backend.database.models import User
+        from sqlalchemy import func
+
+        subquery = db.query(
+            Submission.student_username,
+            func.max(Submission.id).label("max_id")
+        ).filter(Submission.task_id == task_id).group_by(Submission.student_username).subquery()
+
+        submissions = db.query(Submission).join(
+            subquery,
+            Submission.id == subquery.c.max_id
+        ).order_by(Submission.submit_time.desc()).all()
+
+        results = []
+        for s in submissions:
+            user = db.query(User).filter(User.username == s.student_username).first()
+            d = {c.name: getattr(s, c.name) for c in s.__table__.columns}
+            d["student_name"] = user.display_name if user else s.student_username
+            results.append(d)
+        return results
     except Exception as e:
         logger.error(f"获取任务提交记录失败: {e}")
         return []
     finally:
-        conn.close()
+        db.close()
 
 
 def get_submissions_by_task_all(task_id: int) -> List[Dict]:
-    """
-    获取某任务下所有提交记录（学生端用，或需要历史记录时）
-    """
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT s.*, u.display_name as student_name 
-            FROM submissions s 
-            JOIN users u ON s.student_username = u.username 
-            WHERE s.task_id = ? 
-            ORDER BY s.submit_time DESC
-        """, (task_id,))
-        rows = cursor.fetchall()
-        columns = [description[0] for description in cursor.description]
-        return [dict(zip(columns, row)) for row in rows]
-    except Exception as e:
-        logger.error(f"获取任务提交记录失败: {e}")
-        return []
-    finally:
-        conn.close()
+    """获取某任务下所有提交记录"""
+    return get_submissions_by_task_v2(task_id)
 
 
 def update_submission_ai_scored(submission_id: int, ai_scored: bool = True, ai_scored_by: str = None):
     """更新提交的AI评分状态"""
-    conn = get_db_connection()
+    db = SessionLocal()
     try:
-        cursor = conn.cursor()
-        now = datetime.now().isoformat()
-        
-        # 检查字段是否存在
-        cursor.execute("PRAGMA table_info(submissions)")
-        columns = [col[1] for col in cursor.fetchall()]
-        
-        updates = ["ai_scored = ?"]
-        values = [1 if ai_scored else 0]
-        
-        if 'ai_scored_at' in columns:
-            updates.append("ai_scored_at = ?")
-            values.append(now)
-        
-        if 'ai_scored_by' in columns and ai_scored_by:
-            updates.append("ai_scored_by = ?")
-            values.append(ai_scored_by)
-        
-        values.append(submission_id)
-        
-        cursor.execute(f"""
-            UPDATE submissions 
-            SET {', '.join(updates)}
-            WHERE id = ?
-        """, tuple(values))
-        conn.commit()
-        logger.info(f"已更新提交 {submission_id} 的AI评分状态")
+        submission = db.query(Submission).filter(Submission.id == submission_id).first()
+        if submission:
+            submission.ai_scored = ai_scored
+            submission.ai_scored_at = datetime.now().isoformat()
+            if ai_scored_by:
+                submission.ai_scored_by = ai_scored_by
+            db.commit()
+            logger.info(f"已更新提交 {submission_id} 的AI评分状态")
     except Exception as e:
+        db.rollback()
         logger.error(f"更新AI评分状态失败: {e}")
         raise
     finally:
-        conn.close()
+        db.close()

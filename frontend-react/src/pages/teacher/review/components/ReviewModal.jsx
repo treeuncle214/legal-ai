@@ -17,8 +17,8 @@ export const ReviewModal = ({
     dimensions,
     onReviewSubmit,
     onPublish,
-    onReScore,      // 🆕 重评回调
-    onUnpublish,    // 🆕 撤回发布回调
+    onReScore,
+    onUnpublish,
     onOpenWord
 }) => {
     const [scores, setScores] = useState({});
@@ -69,17 +69,16 @@ export const ReviewModal = ({
         setIsSubmitting(true);
         try {
             const currentScores = scoresRef.current;
-
             const originalIndicatorScores = submission.indicator_scores || {};
-            const indicatorMaxScores = submission.indicator_max_scores || {};
 
+            // ✅ 收集所有修改后的指标分数
             const modifiedIndicatorScores = {};
-
             Object.keys(originalIndicatorScores).forEach(key => {
                 if (currentScores[key] !== undefined && currentScores[key] !== originalIndicatorScores[key]) {
                     modifiedIndicatorScores[key] = currentScores[key];
                 }
             });
+            // 如果当前分数中有新增的指标（不在原始中）
             Object.keys(currentScores).forEach(key => {
                 if (key.startsWith('A') || key.startsWith('B') || key.startsWith('C') || key.startsWith('D')) {
                     if (!(key in originalIndicatorScores) && currentScores[key] !== undefined) {
@@ -88,37 +87,12 @@ export const ReviewModal = ({
                 }
             });
 
-            const dimensionScores = {};
-            dimensions.forEach(dim => {
-                const key = dim.key;
-                const indicators = dim.sub_indicators || [];
-                if (indicators.length > 0) {
-                    let dimActual = 0;
-                    let dimMax = 0;
-                    indicators.forEach(ind => {
-                        const indKey = ind.key;
-                        const score = modifiedIndicatorScores[indKey] !== undefined
-                            ? modifiedIndicatorScores[indKey]
-                            : (originalIndicatorScores[indKey] || 0);
-                        const maxScore = indicatorMaxScores[indKey] || 10;
-                        dimActual += score;
-                        dimMax += maxScore;
-                    });
-                    if (dimMax > 0) {
-                        dimensionScores[key] = Math.round((dimActual / dimMax) * 100 * 100) / 100;
-                    } else {
-                        dimensionScores[key] = 0;
-                    }
-                } else {
-                    dimensionScores[key] = 0;
-                }
-            });
-
+            // ✅ 后端会重新计算维度分数，前端不发送维度分数
             const success = await onReviewSubmit(
                 submission.id,
-                dimensionScores,
+                {},  // 维度分数置空，让后端计算
                 '',
-                modifiedIndicatorScores
+                modifiedIndicatorScores  // ✅ 发送修改后的指标分数
             );
             if (success) {
                 onClose();
@@ -128,15 +102,15 @@ export const ReviewModal = ({
         }
     }, [submission, dimensions, onReviewSubmit, onClose]);
 
-    const handlePublish = useCallback(async () => {
+    // 🆕 撤回发布
+    const handleUnpublishClick = useCallback(async () => {
         if (!submission) return;
-        const success = await onPublish(submission.id);
+        const success = await onUnpublish(submission.id);
         if (success) {
             onClose();
         }
-    }, [submission, onPublish, onClose]);
+    }, [submission, onUnpublish, onClose]);
 
-    // 🆕 重新AI评分
     const handleReScoreClick = useCallback(async () => {
         if (!submission) return;
         setIsReScoring(true);
@@ -150,15 +124,6 @@ export const ReviewModal = ({
         }
     }, [submission, onReScore, onClose]);
 
-    // 🆕 撤回发布
-    const handleUnpublishClick = useCallback(async () => {
-        if (!submission) return;
-        const success = await onUnpublish(submission.id);
-        if (success) {
-            onClose();
-        }
-    }, [submission, onUnpublish, onClose]);
-
     if (!submission) return null;
 
     const isReviewed = submission.is_reviewed === 1;
@@ -167,41 +132,32 @@ export const ReviewModal = ({
     const isScoring = submission.ai_score_status === 'scoring';
     const isAiScored = submission.ai_scored || false;
 
-    const indicatorScores = submission.indicator_scores || {};
-    let totalScore = 0;
-    Object.keys(indicatorScores).forEach(key => {
-        const score = scores[key] !== undefined ? scores[key] : indicatorScores[key];
-        totalScore += (score || 0);
-    });
-
+    // ✅ 从 submission 读取后端计算的维度分数
     const dimensionScores = {};
     dimensions.forEach(dim => {
         const key = dim.key;
-        const indicators = dim.sub_indicators || [];
-        if (indicators.length > 0) {
-            let dimActual = 0;
-            let dimMax = 0;
-            indicators.forEach(ind => {
-                const indKey = ind.key;
-                const score = scores[indKey] !== undefined ? scores[indKey] : (indicatorScores[indKey] || 0);
-                const maxScore = submission.indicator_max_scores?.[indKey] || 10;
-                dimActual += score;
-                dimMax += maxScore;
-            });
-            if (dimMax > 0) {
-                dimensionScores[key] = Math.round((dimActual / dimMax) * 100 * 100) / 100;
-            } else {
-                dimensionScores[key] = 0;
-            }
+        // 优先使用 final_score（教师调整后的分数）
+        const finalScore = submission.final_scores?.[key] || submission[`final_score_${key}`];
+        if (finalScore !== undefined && finalScore !== null && finalScore > 0) {
+            dimensionScores[key] = finalScore;
         } else {
-            dimensionScores[key] = 0;
+            // 如果没有 final_score，使用 AI 原始分
+            dimensionScores[key] = submission.scores?.[key] || 0;
         }
     });
 
+    // ✅ 使用后端计算的总分
+    const totalScore = submission.total_score || 0;
+
+    // ✅ 指标评分（用于展示）
+    const indicatorScores = submission.indicator_scores || {};
+
+    // ✅ 计算等级
     const level = getLevelByScore(totalScore);
     const levelColor = getLevelColor(level);
 
-    // ========== Footer 按钮逻辑 ==========
+    // ========== 后续渲染代码保持不变 ==========
+    // 注意：下面的 render 部分保持不变，但 ScoreSummary 使用的 dimensionScores 和 totalScore 已经是后端计算的值
 
     // 已发布 → 显示「撤回发布」和「关闭」
     if (isPublished) {
@@ -318,7 +274,7 @@ export const ReviewModal = ({
                         <Button
                             type="primary"
                             style={{ background: '#52c41a', borderColor: '#52c41a' }}
-                            onClick={handlePublish}
+                            onClick={onPublish}
                         >
                             发布成绩
                         </Button>

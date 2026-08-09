@@ -3,7 +3,7 @@
 """
 
 from backend.database.engine import SessionLocal
-from backend.database.models import Task
+from backend.database.models import Task, TaskRubric, TaskRubricIndicator
 
 
 def add_task(
@@ -19,8 +19,8 @@ def add_task(
     class_id=None,
     rubric_template_id=None,
     task_rubric_id=None,
-    attachment_path=None,      # ✅ 新增
-    attachment_filename=None   # ✅ 新增
+    attachment_path=None,
+    attachment_filename=None
 ):
     db = SessionLocal()
     try:
@@ -37,8 +37,8 @@ def add_task(
             class_id=class_id,
             rubric_template_id=rubric_template_id,
             task_rubric_id=task_rubric_id,
-            attachment_path=attachment_path,        # ✅ 新增
-            attachment_filename=attachment_filename  # ✅ 新增
+            attachment_path=attachment_path,
+            attachment_filename=attachment_filename
         )
         db.add(task)
         db.commit()
@@ -52,7 +52,32 @@ def get_task(task_id):
     db = SessionLocal()
     try:
         task = db.query(Task).filter(Task.id == task_id).first()
-        return task.to_dict() if task else None
+        if not task:
+            return None
+        
+        result = task.to_dict()
+        
+        # ✅ 添加 rubric_config
+        task_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task_id).first()
+        if task_rubric:
+            indicators = db.query(TaskRubricIndicator).filter(
+                TaskRubricIndicator.task_rubric_id == task_rubric.id
+            ).all()
+            result["rubric_config"] = {
+                "overall_prompt": task_rubric.overall_prompt,
+                "indicators": [
+                    {
+                        "indicator_key": ind.indicator_key,
+                        "max_score": ind.max_score,
+                        "prompt": ind.prompt
+                    }
+                    for ind in indicators
+                ]
+            }
+        else:
+            result["rubric_config"] = None
+        
+        return result
     finally:
         db.close()
 
@@ -70,16 +95,39 @@ def get_all_tasks(include_inactive=False, class_id=None, teacher_id=None):
             subquery = db.query(Class.id).filter(Class.teacher_id == teacher_id).subquery()
             query = query.filter(Task.class_id.in_(subquery))
         tasks = query.order_by(Task.created_at.desc()).all()
-        return [t.to_dict() for t in tasks]
+        
+        result = []
+        for task in tasks:
+            task_dict = task.to_dict()
+            
+            # ✅ 添加 rubric_config
+            task_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task.id).first()
+            if task_rubric:
+                indicators = db.query(TaskRubricIndicator).filter(
+                    TaskRubricIndicator.task_rubric_id == task_rubric.id
+                ).all()
+                task_dict["rubric_config"] = {
+                    "overall_prompt": task_rubric.overall_prompt,
+                    "indicators": [
+                        {
+                            "indicator_key": ind.indicator_key,
+                            "max_score": ind.max_score,
+                            "prompt": ind.prompt
+                        }
+                        for ind in indicators
+                    ]
+                }
+            else:
+                task_dict["rubric_config"] = None
+            
+            result.append(task_dict)
+        
+        return result
     finally:
         db.close()
 
 
 def update_task(task_id, **kwargs):
-    """
-    支持更新：title, description, due_date, is_active, task_type, 
-    enabled_indicators, max_submissions, allow_after_deadline, custom_prompt, rubric_template_id
-    """
     db = SessionLocal()
     try:
         task = db.query(Task).filter(Task.id == task_id).first()
@@ -95,5 +143,4 @@ def update_task(task_id, **kwargs):
 
 
 def delete_task(task_id):
-    """软删除任务"""
     return update_task(task_id, is_active=0)

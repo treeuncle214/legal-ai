@@ -82,7 +82,6 @@ export default function TeacherReview() {
                 )}
             </div>
 
-            {/* 移除 onAIScoreSuccess 和 onAIScoreError */}
             <ReviewTable
                 submissions={submissions}
                 loading={loading}

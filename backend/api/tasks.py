@@ -14,6 +14,8 @@ from backend.schemas.task import TaskCreate, TaskUpdate, TaskResponse
 from backend.schemas.common import Response
 from backend.database.rubric import get_template, create_task_rubric_snapshot, update_task_rubric_task_id
 from backend.config import UPLOAD_DIR
+from backend.database.models import TaskRubric, TaskRubricIndicator
+from backend.database.tasks import get_all_tasks as get_tasks_db
 
 router = APIRouter(prefix="/api", tags=["任务管理"])
 
@@ -23,9 +25,7 @@ async def get_tasks(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取任务列表"""
-    from backend.database.tasks import get_all_tasks as get_tasks_db
-    from backend.api.deps import get_student_class_id, get_teacher_class_ids
+
     
     try:
         if current_user["role"] == "student":
@@ -51,6 +51,27 @@ async def get_tasks(
                             tasks.append(t)
         
         for task in tasks:
+            # ✅ 补充 rubric_config
+            task_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task.get("id")).first()
+            if task_rubric:
+                indicators = db.query(TaskRubricIndicator).filter(
+                    TaskRubricIndicator.task_rubric_id == task_rubric.id
+                ).all()
+                task["rubric_config"] = {
+                    "overall_prompt": task_rubric.overall_prompt,
+                    "indicators": [
+                        {
+                            "indicator_key": ind.indicator_key,
+                            "max_score": ind.max_score,
+                            "prompt": ind.prompt
+                        }
+                        for ind in indicators
+                    ]
+                }
+            else:
+                task["rubric_config"] = None
+            
+            # 补充模板指标信息
             template_id = task.get("rubric_template_id")
             if template_id:
                 template = get_template(template_id)
@@ -76,6 +97,8 @@ async def get_task_detail(
     db: Session = Depends(get_db)
 ):
     """获取单个任务详情（需验证权限）"""
+    from backend.database.models import TaskRubric, TaskRubricIndicator
+    
     task = get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -89,6 +112,27 @@ async def get_task_detail(
         if task.get("class_id") not in teacher_class_ids:
             raise HTTPException(status_code=403, detail="无权查看此任务")
     
+    # ✅ 补充 rubric_config（从 TaskRubric 查询）
+    task_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task_id).first()
+    if task_rubric:
+        indicators = db.query(TaskRubricIndicator).filter(
+            TaskRubricIndicator.task_rubric_id == task_rubric.id
+        ).all()
+        task["rubric_config"] = {
+            "overall_prompt": task_rubric.overall_prompt,
+            "indicators": [
+                {
+                    "indicator_key": ind.indicator_key,
+                    "max_score": ind.max_score,
+                    "prompt": ind.prompt
+                }
+                for ind in indicators
+            ]
+        }
+    else:
+        task["rubric_config"] = None
+    
+    # 补充模板指标信息
     template_id = task.get("rubric_template_id")
     if template_id:
         template = get_template(template_id)

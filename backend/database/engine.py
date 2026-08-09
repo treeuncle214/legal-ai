@@ -5,46 +5,15 @@
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
-
-from backend.config import DB_PATH
-from sqlite3 import connect, Connection
-from contextlib import contextmanager
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# 数据库文件路径
-DB_PATH = os.getenv("DATABASE_URL", "sqlite:///./data/assessment.db").replace("sqlite:///", "")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/assessment.db")
 
-def get_db_connection() -> Connection:
-    """获取数据库连接"""
-    # 确保 data 目录存在
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    return connect(DB_PATH)
-
-
-@contextmanager
-def get_db():
-    """上下文管理器方式的数据库连接"""
-    conn = get_db_connection()
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-# 根据环境变量选择数据库
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", 
-    f"sqlite:///{DB_PATH}"
-)
-
-# SQLite 需要特殊配置
 if DATABASE_URL.startswith("sqlite"):
     engine = create_engine(
-        DATABASE_URL, 
+        DATABASE_URL,
         connect_args={"check_same_thread": False},
         echo=False
     )
@@ -62,13 +31,3 @@ def get_db_session():
         yield db
     finally:
         db.close()
-
-
-def get_db():
-    """获取数据库会话（兼容旧代码）"""
-    db = SessionLocal()
-    try:
-        return db
-    except:
-        db.close()
-        raise

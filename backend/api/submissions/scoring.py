@@ -43,6 +43,21 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
         # 调用评分引擎
         score_result = score_submission(task_dict, score_data)
         
+        # ✅ 确保 score_result 包含 indicator_max_scores
+        if "indicator_max_scores" not in score_result or not score_result["indicator_max_scores"]:
+            db_temp = SessionLocal()
+            try:
+                task_rubric = db_temp.query(TaskRubric).filter(TaskRubric.task_id == task_dict.get("id")).first()
+                if task_rubric:
+                    indicators = db_temp.query(TaskRubricIndicator).filter(
+                        TaskRubricIndicator.task_rubric_id == task_rubric.id
+                    ).all()
+                    indicator_max_scores = {ind.indicator_key: ind.max_score for ind in indicators}
+                    score_result["indicator_max_scores"] = indicator_max_scores
+                    logger.info(f"从数据库查询到满分信息: {indicator_max_scores}")
+            finally:
+                db_temp.close()
+        
         # 准备评分数据
         scores_dict = {
             "score_ai_retrieval": score_result["dimension_scores"].get("ai_retrieval", 0),
@@ -85,6 +100,7 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
                         submission_id=submission_id,
                         indicator_key=key,
                         score=final_score,
+                        ai_original_score=final_score,  # ✅ 保存 AI 原始分数
                         level=indicator_levels.get(key, "合格"),
                         comment=indicator_comments.get(key, "")
                     )
@@ -97,12 +113,12 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
             if db:
                 db.close()
         
-        # 🆕 生成测评报告（包含模板信息和学生内容）
+        # 生成测评报告（包含模板信息和学生内容）
         try:
             # 获取学生提交内容
             student_content = submission.get("word_content", "") or submission.get("final_output", "")
             
-            # ========== ✅ 获取启用指标 ==========
+            # 获取启用指标
             enabled_indicators = task_dict.get("enabled_indicators", [])
             if isinstance(enabled_indicators, str):
                 enabled_indicators = [i.strip() for i in enabled_indicators.split(',') if i.strip()]
@@ -154,7 +170,7 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
                 student_content=student_content,
                 teacher_prompt=teacher_prompt,
                 indicator_details=indicator_details,
-                enabled_indicators=enabled_indicators  # ✅ 新增
+                enabled_indicators=enabled_indicators
             )
             
             if report_data:

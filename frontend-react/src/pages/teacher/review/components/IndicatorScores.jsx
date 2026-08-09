@@ -1,7 +1,7 @@
-// frontend/src/pages/teacher/review/components/IndicatorScores.jsx
+// frontend-react/src/pages/teacher/review/components/IndicatorScores.jsx
 
 import { Descriptions, InputNumber, Tag, Space, Tooltip, Popover } from 'antd';
-import { MessageOutlined } from '@ant-design/icons';
+import { QuestionCircleOutlined, MessageOutlined } from '@ant-design/icons';
 import { getLevelColor, getLevelByScore } from '@/utils/scoreUtils';
 
 export const IndicatorScores = ({
@@ -12,34 +12,42 @@ export const IndicatorScores = ({
     isPending,
     isReviewed
 }) => {
-    const originalIndicatorScores = submission.indicator_scores || {};
+    const indicatorScores = submission.indicator_scores || {};
     const indicatorLevels = submission.indicator_levels || {};
     const indicatorComments = submission.indicator_comments || {};
+    // ✅ 使用 ai_original_scores（后端返回的 AI 原始分数）
+    const aiOriginalScores = submission.ai_original_scores || {};
     const indicatorMaxScores = submission.indicator_max_scores || {};
+    // ✅ 获取启用指标列表
+    const enabledIndicators = submission.enabled_indicators || [];
 
-    const getCurrentScore = (key) => {
-        if (scores && scores[key] !== undefined && scores[key] !== null) {
-            return scores[key];
-        }
-        return originalIndicatorScores[key] || 0;
-    };
-
-    const getOriginalScore = (key) => {
-        return originalIndicatorScores[key] || 0;
-    };
-
+    // ✅ 获取指标满分（默认10分）
     const getIndicatorMaxScore = (key) => {
         return indicatorMaxScores[key] || 10;
     };
 
-    // ✅ 计算指标等级：先转换为百分制
-    const getIndicatorLevel = (key, score) => {
-        const maxScore = getIndicatorMaxScore(key);
-        if (maxScore <= 0) return '不合格';
-        const percent = (score / maxScore) * 100;
-        return getLevelByScore(percent);
+    // ✅ 判断指标是否涉及（任务启用且AI有评分）
+    const isIndicatorInvolved = (key) => {
+        // 1. 检查任务是否启用了该指标
+        if (Array.isArray(enabledIndicators) && enabledIndicators.length > 0) {
+            if (!enabledIndicators.includes(key)) {
+                return false;
+            }
+        }
+        // 2. 检查 AI 是否给出了分数或评语
+        const score = indicatorScores[key];
+        const comment = indicatorComments[key];
+        if (score === undefined || score === null) {
+            return false;
+        }
+        // 如果分数为0但有评语，说明涉及了但得0分
+        if (score === 0 && (!comment || comment.trim() === '')) {
+            return false;
+        }
+        return true;
     };
 
+    // ✅ 渲染指标标签
     const renderIndicatorLabel = (key, name, comment) => {
         return (
             <Space>
@@ -47,14 +55,43 @@ export const IndicatorScores = ({
                 <span style={{ fontSize: 12, color: '#999' }}>
                     {name}
                 </span>
+                {comment && (
+                    <Popover
+                        content={
+                            <div style={{ maxWidth: 300, whiteSpace: 'pre-wrap' }}>
+                                <strong>AI评价：</strong>
+                                <br />
+                                {comment}
+                            </div>
+                        }
+                        title="💬 指标评语"
+                        trigger="hover"
+                        placement="top"
+                    >
+                        <MessageOutlined style={{ color: '#1890ff', fontSize: 13, cursor: 'pointer' }} />
+                    </Popover>
+                )}
             </Space>
         );
     };
 
-    const renderIndicatorValue = (key, currentScore, originalScore, level, comment, isEdit = false) => {
+    // ✅ 渲染指标值
+    const renderIndicatorValue = (key, score, level, comment, isEdit = false) => {
         const levelColor = getLevelColor(level);
-        const hasChanged = originalScore !== undefined && originalScore !== null && originalScore !== currentScore;
         const maxScore = getIndicatorMaxScore(key);
+        const involved = isIndicatorInvolved(key);
+        // ✅ 获取 AI 原始分数
+        const originalScore = aiOriginalScores[key];
+        const hasChanged = originalScore !== undefined && originalScore !== null && originalScore !== score;
+
+        // ✅ 如果指标未涉及，显示"本次作业未涉及"
+        if (!involved) {
+            return (
+                <span style={{ color: '#999', fontSize: 14 }}>
+                    本次作业未涉及
+                </span>
+            );
+        }
 
         return (
             <Space size="middle" wrap>
@@ -63,14 +100,14 @@ export const IndicatorScores = ({
                         min={0}
                         max={maxScore}
                         step={0.5}
-                        value={currentScore}
+                        value={score}
                         onChange={(val) => onScoreChange(key, val)}
                         style={{ width: 80 }}
                         placeholder={`0-${maxScore}`}
                     />
                 ) : (
                     <span style={{ fontWeight: 'bold', fontSize: 16 }}>
-                        {currentScore.toFixed(1)}
+                        {score.toFixed(1)}
                     </span>
                 )}
                 <span style={{ color: '#999', fontSize: 12 }}>/ {maxScore}分</span>
@@ -107,8 +144,8 @@ export const IndicatorScores = ({
         );
     };
 
-    // 查看模式
     if (isReviewed && !isPending) {
+        // 查看模式
         return (
             <Descriptions column={2} bordered size="small">
                 {dimensions.map(dim => {
@@ -117,10 +154,8 @@ export const IndicatorScores = ({
 
                     return indicators.map(ind => {
                         const key = ind.key;
-                        const currentScore = getCurrentScore(key);
-                        const originalScore = getOriginalScore(key);
-                        // ✅ 使用百分制计算等级
-                        const level = getIndicatorLevel(key, currentScore);
+                        const score = indicatorScores[key] || 0;
+                        const level = indicatorLevels[key] || getLevelByScore(score);
                         const comment = indicatorComments[key];
 
                         return (
@@ -129,7 +164,7 @@ export const IndicatorScores = ({
                                 label={renderIndicatorLabel(key, ind.name, comment)}
                                 span={1}
                             >
-                                {renderIndicatorValue(key, currentScore, originalScore, level, comment, false)}
+                                {renderIndicatorValue(key, score, level, comment, false)}
                             </Descriptions.Item>
                         );
                     });
@@ -151,11 +186,9 @@ export const IndicatorScores = ({
 
                     return indicators.map(ind => {
                         const key = ind.key;
-                        const currentScore = getCurrentScore(key);
-                        const originalScore = getOriginalScore(key);
+                        const currentScore = indicatorScores[key] || 0;
                         const comment = indicatorComments[key];
-                        // ✅ 使用百分制计算等级
-                        const level = getIndicatorLevel(key, currentScore);
+                        const level = indicatorLevels[key] || getLevelByScore(currentScore);
 
                         return (
                             <Descriptions.Item
@@ -163,7 +196,7 @@ export const IndicatorScores = ({
                                 label={renderIndicatorLabel(key, ind.name, comment)}
                                 span={1}
                             >
-                                {renderIndicatorValue(key, currentScore, originalScore, level, comment, true)}
+                                {renderIndicatorValue(key, currentScore, level, comment, true)}
                             </Descriptions.Item>
                         );
                     });
