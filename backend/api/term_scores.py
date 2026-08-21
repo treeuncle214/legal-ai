@@ -48,17 +48,18 @@ def calculate_term_score(student_username: str, class_id: int = None) -> Optiona
 
         for sub in submissions:
             task = db.query(Task).filter(Task.id == sub.task_id).first()
-            if not task:
+            if not task or not task.weight:
                 continue
 
-            weight = task.weight or 0
-
-            indicator_scores = db.query(SubmissionScore).filter(
-                SubmissionScore.submission_id == sub.id
-            ).all()
-
-            total_score = sum([s.score for s in indicator_scores])
-            contribution = total_score * (weight / 100)
+            weight = task.weight
+            
+            # ✅ 使用 submissions.total_score（百分制得分）
+            score = sub.total_score or 0
+            
+            if score <= 0:
+                continue
+            
+            contribution = score * (weight / 100)
             total_weighted += contribution
             total_weight += weight
 
@@ -68,14 +69,15 @@ def calculate_term_score(student_username: str, class_id: int = None) -> Optiona
                 "task_title": task.title,
                 "task_type": task.task_type,
                 "weight": weight,
-                "score": round(total_score, 2),
+                "score": round(score, 2),
                 "contribution": round(contribution, 2)
             })
 
         if total_weight == 0:
             return None
 
-        final_score = round(total_weighted / (total_weight / 100), 2)
+        # ✅ 归一化：如果总权重不是100%，按实际权重比例计算
+        final_score = round(total_weighted / total_weight * 100, 2)
         level = get_level_by_score(final_score)
 
         return {

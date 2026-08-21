@@ -12,12 +12,28 @@ from backend.api.deps import get_db, get_current_teacher, get_current_user, get_
 from backend.database import add_task, get_task, get_all_tasks, update_task, delete_task
 from backend.schemas.task import TaskCreate, TaskUpdate, TaskResponse
 from backend.schemas.common import Response
-from backend.database.rubric import get_template, create_task_rubric_snapshot, update_task_rubric_task_id
+from backend.database.rubric import get_template, create_task_rubric_snapshot, update_task_rubric_task_id, get_task_rubric
 from backend.config import UPLOAD_DIR
 from backend.database.models import TaskRubric, TaskRubricIndicator
 from backend.database.tasks import get_all_tasks as get_tasks_db
+from backend.database.tasks import get_class_weight_sum
 
 router = APIRouter(prefix="/api", tags=["任务管理"])
+
+
+# ✅ 获取班级权重总和
+@router.get("/classes/{class_id}/weight-sum")
+async def get_class_weight_sum_api(
+    class_id: int,
+    current_user: dict = Depends(get_current_teacher),
+    db: Session = Depends(get_db)
+):
+    """获取班级已发布任务的权重总和"""
+    teacher_class_ids = get_teacher_class_ids(current_user)
+    if current_user["role"] != "admin" and class_id not in teacher_class_ids:
+        raise HTTPException(status_code=403, detail="无权查看此班级")
+    
+    return Response(data=get_class_weight_sum(class_id))
 
 
 @router.get("/tasks", response_model=Response[list])
@@ -25,60 +41,91 @@ async def get_tasks(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-
-    
+    """获取任务列表"""
     try:
+        tasks = []
+        
         if current_user["role"] == "student":
             try:
                 class_id = get_student_class_id(current_user)
-                tasks = get_tasks_db(class_id=class_id)
+                if class_id:
+                    tasks = get_tasks_db(class_id=class_id) or []
+                else:
+                    tasks = []
             except HTTPException:
-                return Response(data=[])
+                tasks = []
+            except Exception as e:
+                print(f"获取学生任务失败: {e}")
+                tasks = []
         else:
             if current_user["username"] == "admin":
-                tasks = get_tasks_db()
+                tasks = get_tasks_db() or []
             else:
                 class_ids = get_teacher_class_ids(current_user)
                 if not class_ids:
-                    return Response(data=[])
-                tasks = []
-                seen = set()
-                for cid in class_ids:
-                    class_tasks = get_tasks_db(class_id=cid)
-                    for t in class_tasks:
-                        if t["id"] not in seen:
-                            seen.add(t["id"])
-                            tasks.append(t)
+                    tasks = []
+                else:
+                    tasks = []
+                    seen = set()
+                    for cid in class_ids:
+                        try:
+                            class_tasks = get_tasks_db(class_id=cid)
+                            if class_tasks:
+                                for t in class_tasks:
+                                    if t and t.get("id") not in seen:
+                                        seen.add(t.get("id"))
+                                        tasks.append(t)
+                        except Exception as e:
+                            print(f"获取班级 {cid} 任务失败: {e}")
+                            continue
         
+        # 确保 tasks 是列表
+        if tasks is None:
+            tasks = []
+        
+        # 补充 rubric_config 和模板信息
         for task in tasks:
-            # ✅ 补充 rubric_config
-            task_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task.get("id")).first()
-            if task_rubric:
-                indicators = db.query(TaskRubricIndicator).filter(
-                    TaskRubricIndicator.task_rubric_id == task_rubric.id
-                ).all()
-                task["rubric_config"] = {
-                    "overall_prompt": task_rubric.overall_prompt,
-                    "indicators": [
-                        {
-                            "indicator_key": ind.indicator_key,
-                            "max_score": ind.max_score,
-                            "prompt": ind.prompt
-                        }
-                        for ind in indicators
-                    ]
-                }
-            else:
-                task["rubric_config"] = None
+            if not task:
+                continue
             
-            # 补充模板指标信息
-            template_id = task.get("rubric_template_id")
-            if template_id:
-                template = get_template(template_id)
-                if template:
-                    task["template_indicators"] = template.get("indicators", [])
-                    task["template_name"] = template.get("name")
-            else:
+            # ✅ 优先从任务快照获取评分配置
+            try:
+                task_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task.get("id")).first()
+                if task_rubric:
+                    indicators = db.query(TaskRubricIndicator).filter(
+                        TaskRubricIndicator.task_rubric_id == task_rubric.id
+                    ).order_by(TaskRubricIndicator.sort_order).all()
+                    
+                    rubric_config = {
+                        "overall_prompt": task_rubric.overall_prompt,
+                        "indicators": [
+                            {
+                                "indicator_key": ind.indicator_key,
+                                "max_score": ind.max_score,
+                                "prompt": ind.prompt
+                            }
+                            for ind in indicators
+                        ]
+                    }
+                    task["rubric_config"] = rubric_config
+                    
+                    # ✅ 关键修改：template_indicators 使用快照数据，而不是原始模板
+                    task["template_indicators"] = rubric_config["indicators"]
+                    task["template_name"] = None  # 从原始模板获取名称（仅用于显示）
+                    
+                    # 尝试获取模板名称（仅用于显示，不影响评分逻辑）
+                    template_id = task.get("rubric_template_id")
+                    if template_id:
+                        template = get_template(template_id)
+                        if template:
+                            task["template_name"] = template.get("name")
+                else:
+                    task["rubric_config"] = None
+                    task["template_indicators"] = []
+                    task["template_name"] = None
+            except Exception as e:
+                print(f"获取 rubric_config 失败: {e}")
+                task["rubric_config"] = None
                 task["template_indicators"] = []
                 task["template_name"] = None
         
@@ -87,7 +134,7 @@ async def get_tasks(
         print(f"获取任务列表失败: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        return Response(data=[])
 
 
 @router.get("/tasks/{task_id}", response_model=Response[TaskResponse])
@@ -97,8 +144,6 @@ async def get_task_detail(
     db: Session = Depends(get_db)
 ):
     """获取单个任务详情（需验证权限）"""
-    from backend.database.models import TaskRubric, TaskRubricIndicator
-    
     task = get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -109,16 +154,17 @@ async def get_task_detail(
             raise HTTPException(status_code=403, detail="无权查看此任务")
     else:
         teacher_class_ids = get_teacher_class_ids(current_user)
-        if task.get("class_id") not in teacher_class_ids:
+        if current_user["role"] != "admin" and task.get("class_id") not in teacher_class_ids:
             raise HTTPException(status_code=403, detail="无权查看此任务")
     
-    # ✅ 补充 rubric_config（从 TaskRubric 查询）
+    # ✅ 优先从任务快照获取评分配置
     task_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task_id).first()
     if task_rubric:
         indicators = db.query(TaskRubricIndicator).filter(
             TaskRubricIndicator.task_rubric_id == task_rubric.id
-        ).all()
-        task["rubric_config"] = {
+        ).order_by(TaskRubricIndicator.sort_order).all()
+        
+        rubric_config = {
             "overall_prompt": task_rubric.overall_prompt,
             "indicators": [
                 {
@@ -129,17 +175,20 @@ async def get_task_detail(
                 for ind in indicators
             ]
         }
+        task["rubric_config"] = rubric_config
+        
+        # ✅ 关键修改：template_indicators 使用快照数据
+        task["template_indicators"] = rubric_config["indicators"]
+        task["template_name"] = None
+        
+        # 尝试获取模板名称（仅用于显示）
+        template_id = task.get("rubric_template_id")
+        if template_id:
+            template = get_template(template_id)
+            if template:
+                task["template_name"] = template.get("name")
     else:
         task["rubric_config"] = None
-    
-    # 补充模板指标信息
-    template_id = task.get("rubric_template_id")
-    if template_id:
-        template = get_template(template_id)
-        if template:
-            task["template_indicators"] = template.get("indicators", [])
-            task["template_name"] = template.get("name")
-    else:
         task["template_indicators"] = []
         task["template_name"] = None
     
@@ -152,15 +201,12 @@ async def create_task(
     description: str = Form(None),
     due_date: str = Form(None),
     task_type: str = Form("任务实践"),
-    enabled_indicators: str = Form(""),
-    custom_prompt: str = Form(None),
     class_id: int = Form(...),
     max_submissions: int = Form(3),
     allow_after_deadline: int = Form(0),
     rubric_template_id: int = Form(None),
-    rubric_config: str = Form(None),
     weight: int = Form(5),
-    attachment: UploadFile = File(None),  # ✅ 新增
+    attachment: UploadFile = File(None),
     current_user: dict = Depends(get_current_teacher),
     db: Session = Depends(get_db)
 ):
@@ -171,50 +217,42 @@ async def create_task(
         raise HTTPException(status_code=400, detail="请选择所属班级")
     
     teacher_class_ids = get_teacher_class_ids(current_user)
-    if class_id not in teacher_class_ids:
+    if current_user["role"] != "admin" and class_id not in teacher_class_ids:
         raise HTTPException(status_code=403, detail="无权为其他班级创建任务")
+    
+    # 检查权重是否超限
+    weight_info = get_class_weight_sum(class_id)
+    if weight_info["total_weight"] + weight > 100:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"权重超限！该班级已累计权重 {weight_info['total_weight']}%，加上本次 {weight}% 后总计 {weight_info['total_weight'] + weight}%，超过100%"
+        )
     
     # 获取模板信息
     rubric_template_id = int(rubric_template_id) if rubric_template_id else None
-    template = None
-    if rubric_template_id:
-        template = get_template(rubric_template_id)
-        if not template:
-            raise HTTPException(status_code=404, detail="评分模板不存在")
+    if not rubric_template_id:
+        raise HTTPException(status_code=400, detail="必须选择评分模板")
     
-    # ========== 1. 从模板提取指标列表 ==========
+    template = get_template(rubric_template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="评分模板不存在")
+    
+    # 从模板提取指标列表
     indicators_from_template = []
-    if template:
-        for ind in template.get("indicators", []):
-            indicators_from_template.append({
-                "indicator_key": ind["indicator_key"],
-                "max_score": ind["max_score"],
-                "prompt": ind.get("prompt")
-            })
-        enabled_indicators_str = ",".join([ind["indicator_key"] for ind in indicators_from_template])
-        print(f"📋 从模板提取指标: {enabled_indicators_str}")
-    else:
-        enabled_indicators_str = enabled_indicators or ""
-        if rubric_config:
-            import json
-            try:
-                config = json.loads(rubric_config)
-                for ind in config.get("indicators", []):
-                    indicators_from_template.append({
-                        "indicator_key": ind["indicator_key"],
-                        "max_score": ind.get("max_score", 10),
-                        "prompt": ind.get("prompt")
-                    })
-                enabled_indicators_str = ",".join([ind["indicator_key"] for ind in indicators_from_template])
-            except:
-                pass
+    for ind in template.get("indicators", []):
+        indicators_from_template.append({
+            "indicator_key": ind["indicator_key"],
+            "max_score": ind["max_score"],
+            "prompt": ind.get("prompt")
+        })
+    enabled_indicators_str = ",".join([ind["indicator_key"] for ind in indicators_from_template])
     
-    # ========== 2. 保存附件 ==========
+    # 保存附件
     attachment_path = None
     attachment_filename = None
     if attachment:
         os.makedirs(UPLOAD_DIR, exist_ok=True)
-        ext = os.path.splitext(attachment.filename)[1] if attachment.filename else ".docx"
+        ext = os.path.splitext(attachment.filename)[1] if attachment.filename else ""
         unique_name = f"{uuid.uuid4().hex}{ext}"
         file_path = os.path.join(UPLOAD_DIR, unique_name)
         content = await attachment.read()
@@ -222,9 +260,8 @@ async def create_task(
             f.write(content)
         attachment_path = unique_name
         attachment_filename = attachment.filename
-        print(f"📎 附件已保存: {attachment_filename} -> {attachment_path}")
     
-    # ========== 3. 创建任务 ==========
+    # 创建任务
     task_id = add_task(
         title=title,
         description=description,
@@ -232,39 +269,27 @@ async def create_task(
         created_by=current_user["username"],
         task_type=task_type,
         enabled_indicators=enabled_indicators_str,
-        custom_prompt=custom_prompt,
+        custom_prompt=None,
         class_id=class_id,
         max_submissions=max_submissions,
         allow_after_deadline=allow_after_deadline,
         rubric_template_id=rubric_template_id,
-        attachment_path=attachment_path,        # ✅ 新增
-        attachment_filename=attachment_filename  # ✅ 新增
+        attachment_path=attachment_path,
+        attachment_filename=attachment_filename,
+        weight=weight
     )
     
-    # ========== 4. 创建评分配置快照 ==========
-    rubric_id = None
-    
-    if template:
-        rubric_id = create_task_rubric_snapshot(
-            task_id=task_id,
-            template_id=rubric_template_id,
-            overall_prompt=template.get("overall_prompt"),
-            indicators=indicators_from_template
-        )
-        print(f"✅ 从模板创建快照: rubric_id={rubric_id}")
-    elif indicators_from_template:
-        rubric_id = create_task_rubric_snapshot(
-            task_id=task_id,
-            template_id=None,
-            overall_prompt=custom_prompt,
-            indicators=indicators_from_template
-        )
-        print(f"✅ 从临时配置创建快照: rubric_id={rubric_id}")
+    # 创建评分配置快照
+    rubric_id = create_task_rubric_snapshot(
+        task_id=task_id,
+        template_id=rubric_template_id,
+        overall_prompt=template.get("overall_prompt"),
+        indicators=indicators_from_template
+    )
     
     if rubric_id:
         update_task_rubric_task_id(rubric_id, task_id)
         update_task(task_id, task_rubric_id=rubric_id)
-        print(f"✅ 任务 {task_id} 已关联 rubric_id={rubric_id}")
     
     return Response(data={"id": task_id}, message="任务发布成功")
 
@@ -275,19 +300,18 @@ async def download_task_attachment(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """✅ 下载任务附件（学生和教师均可下载）"""
+    """下载任务附件（学生和教师均可下载）"""
     task = get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
     
-    # 权限检查
     if current_user["role"] == "student":
         student_class_id = get_student_class_id(current_user)
         if task.get("class_id") != student_class_id:
             raise HTTPException(status_code=403, detail="无权下载此附件")
     else:
         teacher_class_ids = get_teacher_class_ids(current_user)
-        if task.get("class_id") not in teacher_class_ids:
+        if current_user["role"] != "admin" and task.get("class_id") not in teacher_class_ids:
             raise HTTPException(status_code=403, detail="无权下载此附件")
     
     attachment_path = task.get("attachment_path")
@@ -300,34 +324,158 @@ async def download_task_attachment(
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="附件文件不存在")
     
+    media_type = "application/octet-stream"
+    if attachment_filename:
+        ext = os.path.splitext(attachment_filename)[1].lower()
+        if ext == '.docx':
+            media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        elif ext == '.zip':
+            media_type = "application/zip"
+        elif ext == '.tar':
+            media_type = "application/x-tar"
+    
     return FileResponse(
         file_path,
         filename=attachment_filename or attachment_path,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        media_type=media_type
     )
 
 
 @router.put("/tasks/{task_id}", response_model=Response)
 async def edit_task(
     task_id: int,
-    task_data: TaskUpdate,
+    title: str = Form(None),
+    description: str = Form(None),
+    due_date: str = Form(None),
+    task_type: str = Form(None),
+    class_id: int = Form(None),
+    max_submissions: int = Form(None),
+    allow_after_deadline: int = Form(None),
+    rubric_template_id: int = Form(None),
+    weight: int = Form(None),
+    force_update_rubric: int = Form(0),  # ✅ 新增：是否强制更新评分配置
+    attachment: UploadFile = File(None),
     current_user: dict = Depends(get_current_teacher),
     db: Session = Depends(get_db)
 ):
-    """编辑任务（教师专用）"""
+    """编辑任务（教师专用），支持上传附件"""
     task = get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
     
     teacher_class_ids = get_teacher_class_ids(current_user)
-    if task.get("class_id") not in teacher_class_ids:
+    if current_user["role"] != "admin" and task.get("class_id") not in teacher_class_ids:
         raise HTTPException(status_code=403, detail="无权编辑此任务")
     
-    if task_data.class_id is not None and task_data.class_id not in teacher_class_ids:
+    if class_id is not None and class_id not in teacher_class_ids:
         raise HTTPException(status_code=403, detail="无权将任务分配到其他班级")
     
-    update_data = {k: v for k, v in task_data.dict().items() if v is not None}
-    update_task(task_id, **update_data)
+    # 构建更新数据
+    update_data = {}
+    if title is not None:
+        update_data["title"] = title
+    if description is not None:
+        update_data["description"] = description
+    if due_date is not None:
+        update_data["due_date"] = due_date
+    if task_type is not None:
+        update_data["task_type"] = task_type
+    if class_id is not None:
+        update_data["class_id"] = class_id
+    if max_submissions is not None:
+        update_data["max_submissions"] = max_submissions
+    if allow_after_deadline is not None:
+        update_data["allow_after_deadline"] = allow_after_deadline
+    if weight is not None:
+        update_data["weight"] = weight
+    
+    # 处理新附件上传
+    if attachment:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        ext = os.path.splitext(attachment.filename)[1] if attachment.filename else ""
+        unique_name = f"{uuid.uuid4().hex}{ext}"
+        file_path = os.path.join(UPLOAD_DIR, unique_name)
+        content = await attachment.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+        
+        old_path = task.get("attachment_path")
+        if old_path:
+            old_file = os.path.join(UPLOAD_DIR, old_path)
+            if os.path.exists(old_file):
+                try:
+                    os.remove(old_file)
+                except:
+                    pass
+        
+        update_data["attachment_path"] = unique_name
+        update_data["attachment_filename"] = attachment.filename
+    
+    # ✅ 处理评分模板变更（方案D）
+    new_rubric_template_id = int(rubric_template_id) if rubric_template_id else None
+    old_rubric_template_id = task.get("rubric_template_id")
+    force_update = force_update_rubric == 1
+    
+    # 需要更新快照的条件：
+    # 1. 模板ID不同（选择了不同模板）
+    # 2. 模板ID相同但用户勾选了"强制更新"
+    need_update_rubric = False
+    
+    if new_rubric_template_id is not None and new_rubric_template_id != old_rubric_template_id:
+        # 选择了不同的模板
+        need_update_rubric = True
+        print(f"🔄 检测到模板变更: {old_rubric_template_id} -> {new_rubric_template_id}")
+    elif new_rubric_template_id is not None and new_rubric_template_id == old_rubric_template_id and force_update:
+        # 同一个模板但用户勾选了强制更新
+        need_update_rubric = True
+        print(f"🔄 用户勾选强制更新评分配置（模板ID不变: {new_rubric_template_id}）")
+    
+    if need_update_rubric:
+        new_template = get_template(new_rubric_template_id)
+        if not new_template:
+            raise HTTPException(status_code=404, detail="评分模板不存在")
+        
+        indicators_from_template = []
+        for ind in new_template.get("indicators", []):
+            indicators_from_template.append({
+                "indicator_key": ind["indicator_key"],
+                "max_score": ind["max_score"],
+                "prompt": ind.get("prompt")
+            })
+        
+        enabled_indicators_str = ",".join([ind["indicator_key"] for ind in indicators_from_template])
+        update_data["enabled_indicators"] = enabled_indicators_str
+        update_data["rubric_template_id"] = new_rubric_template_id
+        
+        # 删除旧快照
+        old_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task_id).first()
+        if old_rubric:
+            db.query(TaskRubricIndicator).filter(
+                TaskRubricIndicator.task_rubric_id == old_rubric.id
+            ).delete()
+            db.delete(old_rubric)
+            db.commit()
+            print(f"✅ 删除旧评分配置快照: rubric_id={old_rubric.id}")
+        
+        # 创建新快照
+        new_rubric_id = create_task_rubric_snapshot(
+            task_id=task_id,
+            template_id=new_rubric_template_id,
+            overall_prompt=new_template.get("overall_prompt"),
+            indicators=indicators_from_template
+        )
+        
+        if new_rubric_id:
+            update_data["task_rubric_id"] = new_rubric_id
+            print(f"✅ 创建新评分配置快照: rubric_id={new_rubric_id}")
+    else:
+        # 不更新快照，但需要更新 rubric_template_id（如果传了的话）
+        if new_rubric_template_id is not None:
+            update_data["rubric_template_id"] = new_rubric_template_id
+    
+    if update_data:
+        update_task(task_id, **update_data)
+        print(f"✅ 任务 {task_id} 更新完成: {list(update_data.keys())}")
     
     return Response(message="任务更新成功")
 
@@ -344,7 +492,7 @@ async def remove_task(
         raise HTTPException(status_code=404, detail="任务不存在")
     
     teacher_class_ids = get_teacher_class_ids(current_user)
-    if task.get("class_id") not in teacher_class_ids:
+    if current_user["role"] != "admin" and task.get("class_id") not in teacher_class_ids:
         raise HTTPException(status_code=403, detail="无权删除此任务")
     
     delete_task(task_id)

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Modal, Button, Descriptions, Tag, Tabs, Space, Typography, Popconfirm } from 'antd';
 import { FileWordOutlined, ReloadOutlined, UndoOutlined } from '@ant-design/icons';
 import { SubmissionContent } from './SubmissionContent';
@@ -54,6 +54,74 @@ export const ReviewModal = ({
         }
     }, [submission, dimensions]);
 
+    const calculatedScores = useMemo(() => {
+        if (!submission) return { dimensionScores: {}, totalScore: 0 };
+
+        // ✅ 直接使用 scores（状态），而不是 scoresRef.current
+        const indicatorScores = scores || {};
+        const indicatorMaxScores = submission.indicator_max_scores || {};
+        const enabledIndicators = submission.enabled_indicators || [];
+
+        const allIndicatorScores = {};
+        Object.keys(indicatorScores).forEach(key => {
+            if (key.match(/^[ABCD]\d$/)) {
+                allIndicatorScores[key] = indicatorScores[key];
+            }
+        });
+
+        const dimensionScores = {};
+        dimensions.forEach(dim => {
+            const dimKey = dim.key;
+            const indicators = dim.sub_indicators || [];
+
+            if (indicators.length === 0) {
+                dimensionScores[dimKey] = 0;
+                return;
+            }
+
+            let dimActual = 0;
+            let dimMax = 0;
+            let hasScore = false;
+
+            indicators.forEach(ind => {
+                const indKey = ind.key;
+                if (enabledIndicators.length > 0 && !enabledIndicators.includes(indKey)) {
+                    return;
+                }
+                const score = allIndicatorScores[indKey];
+                if (score === undefined || score === null) {
+                    return;
+                }
+                const maxScore = indicatorMaxScores[indKey] || 10;
+                dimActual += score;
+                dimMax += maxScore;
+                hasScore = true;
+            });
+
+            if (hasScore && dimMax > 0) {
+                dimensionScores[dimKey] = Math.round((dimActual / dimMax) * 10000) / 100;
+            } else {
+                dimensionScores[dimKey] = 0;
+            }
+        });
+
+        let totalScore = 0;
+        Object.keys(allIndicatorScores).forEach(key => {
+            if (enabledIndicators.length === 0 || enabledIndicators.includes(key)) {
+                totalScore += allIndicatorScores[key] || 0;
+            }
+        });
+        totalScore = Math.round(totalScore * 100) / 100;
+
+        return { dimensionScores, totalScore };
+    }, [scores, submission, dimensions]);  // ✅ 依赖 scores
+
+    // ✅ 实时计算的维度得分和总分
+    const liveDimensionScores = calculatedScores.dimensionScores;
+    const liveTotalScore = calculatedScores.totalScore;
+    const liveLevel = getLevelByScore(liveTotalScore);
+    const liveLevelColor = getLevelColor(liveLevel);
+
     const handleScoreChange = (key, value) => {
         console.log(`🔍 handleScoreChange 收到: key=${key}, value=${value}`);
         setScores(prev => {
@@ -71,7 +139,7 @@ export const ReviewModal = ({
             const currentScores = scoresRef.current;
             const originalIndicatorScores = submission.indicator_scores || {};
 
-            // ✅ 收集所有修改后的指标分数
+            // 收集所有修改后的指标分数
             const modifiedIndicatorScores = {};
             Object.keys(originalIndicatorScores).forEach(key => {
                 if (currentScores[key] !== undefined && currentScores[key] !== originalIndicatorScores[key]) {
@@ -80,19 +148,18 @@ export const ReviewModal = ({
             });
             // 如果当前分数中有新增的指标（不在原始中）
             Object.keys(currentScores).forEach(key => {
-                if (key.startsWith('A') || key.startsWith('B') || key.startsWith('C') || key.startsWith('D')) {
+                if (key.match(/^[ABCD]\d$/)) {
                     if (!(key in originalIndicatorScores) && currentScores[key] !== undefined) {
                         modifiedIndicatorScores[key] = currentScores[key];
                     }
                 }
             });
 
-            // ✅ 后端会重新计算维度分数，前端不发送维度分数
             const success = await onReviewSubmit(
                 submission.id,
-                {},  // 维度分数置空，让后端计算
+                {},
                 '',
-                modifiedIndicatorScores  // ✅ 发送修改后的指标分数
+                modifiedIndicatorScores
             );
             if (success) {
                 onClose();
@@ -102,7 +169,7 @@ export const ReviewModal = ({
         }
     }, [submission, dimensions, onReviewSubmit, onClose]);
 
-    // 🆕 撤回发布
+    // 撤回发布
     const handleUnpublishClick = useCallback(async () => {
         if (!submission) return;
         const success = await onUnpublish(submission.id);
@@ -132,32 +199,71 @@ export const ReviewModal = ({
     const isScoring = submission.ai_score_status === 'scoring';
     const isAiScored = submission.ai_scored || false;
 
-    // ✅ 从 submission 读取后端计算的维度分数
-    const dimensionScores = {};
-    dimensions.forEach(dim => {
-        const key = dim.key;
-        // 优先使用 final_score（教师调整后的分数）
-        const finalScore = submission.final_scores?.[key] || submission[`final_score_${key}`];
-        if (finalScore !== undefined && finalScore !== null && finalScore > 0) {
-            dimensionScores[key] = finalScore;
-        } else {
-            // 如果没有 final_score，使用 AI 原始分
-            dimensionScores[key] = submission.scores?.[key] || 0;
-        }
-    });
-
-    // ✅ 使用后端计算的总分
-    const totalScore = submission.total_score || 0;
-
-    // ✅ 指标评分（用于展示）
+    // 指标评分（用于展示）
     const indicatorScores = submission.indicator_scores || {};
 
-    // ✅ 计算等级
-    const level = getLevelByScore(totalScore);
-    const levelColor = getLevelColor(level);
+    // ========== 渲染共用部分 ==========
+    const renderScoreTabs = (isEditMode) => (
+        <Tabs activeKey={activeTab} onChange={setActiveTab}>
+            <TabPane tab="📄 提交内容" key="content">
+                <SubmissionContent submission={submission} onOpenWord={onOpenWord} />
+            </TabPane>
+            <TabPane tab="📊 评分详情" key="scores">
+                <ScoreSummary
+                    totalScore={liveTotalScore}
+                    level={liveLevel}
+                    dimensionScores={liveDimensionScores}
+                    dimensions={dimensions}
+                    isReviewed={isReviewed || isEditMode}
+                />
+            </TabPane>
+            <TabPane tab="📝 指标评分" key="indicators">
+                <IndicatorScores
+                    submission={submission}
+                    dimensions={dimensions}
+                    scores={scores}
+                    onScoreChange={handleScoreChange}
+                    isPending={isPending && isEditMode}
+                    isReviewed={isReviewed && !isEditMode}
+                />
+            </TabPane>
+            <TabPane tab="📄 测评报告" key="report">
+                <ReportPanel
+                    submissionId={submission.id}
+                    isReviewed={submission.is_reviewed}
+                    onReportChange={(reportData) => {
+                        console.log('报告已更新:', reportData);
+                    }}
+                />
+            </TabPane>
+        </Tabs>
+    );
 
-    // ========== 后续渲染代码保持不变 ==========
-    // 注意：下面的 render 部分保持不变，但 ScoreSummary 使用的 dimensionScores 和 totalScore 已经是后端计算的值
+    const renderStudentInfo = (statusTag, statusColor) => (
+        <Descriptions column={2} bordered size="small" style={{ marginBottom: 16 }}>
+            <Descriptions.Item label="学号">{submission.student_username}</Descriptions.Item>
+            <Descriptions.Item label="姓名">
+                {submission.student_name || submission.student_username}
+            </Descriptions.Item>
+            <Descriptions.Item label="任务">{submission.task_title}</Descriptions.Item>
+            <Descriptions.Item label="提交时间">
+                {submission.submit_time?.replace('T', ' ').substring(0, 19)}
+            </Descriptions.Item>
+            <Descriptions.Item label="提交方式">
+                {submission.submit_type === 'word' ? 'Word文档' : '文本框'}
+            </Descriptions.Item>
+            <Descriptions.Item label="状态" span={2}>
+                <Space>
+                    {statusTag}
+                    {isReviewed && (
+                        <Tag color={liveLevelColor}>
+                            {liveLevel} - {liveTotalScore.toFixed(2)}分
+                        </Tag>
+                    )}
+                </Space>
+            </Descriptions.Item>
+        </Descriptions>
+    );
 
     // 已发布 → 显示「撤回发布」和「关闭」
     if (isPublished) {
@@ -186,63 +292,8 @@ export const ReviewModal = ({
                 }
             >
                 <div style={{ maxHeight: '70vh', overflow: 'auto', paddingRight: 8 }}>
-                    <Descriptions column={2} bordered size="small" style={{ marginBottom: 16 }}>
-                        <Descriptions.Item label="学号">{submission.student_username}</Descriptions.Item>
-                        <Descriptions.Item label="姓名">
-                            {submission.student_name || submission.student_username}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="任务">{submission.task_title}</Descriptions.Item>
-                        <Descriptions.Item label="提交时间">
-                            {submission.submit_time?.replace('T', ' ').substring(0, 19)}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="提交方式">
-                            {submission.submit_type === 'word' ? 'Word文档' : '文本框'}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="状态" span={2}>
-                            <Space>
-                                <Tag color="green">已发布</Tag>
-                                {isReviewed && (
-                                    <Tag color={levelColor}>
-                                        {level} - {totalScore.toFixed(2)}分
-                                    </Tag>
-                                )}
-                            </Space>
-                        </Descriptions.Item>
-                    </Descriptions>
-
-                    <Tabs activeKey={activeTab} onChange={setActiveTab}>
-                        <TabPane tab="📄 提交内容" key="content">
-                            <SubmissionContent submission={submission} onOpenWord={onOpenWord} />
-                        </TabPane>
-                        <TabPane tab="📊 评分详情" key="scores">
-                            <ScoreSummary
-                                totalScore={totalScore}
-                                level={level}
-                                dimensionScores={dimensionScores}
-                                dimensions={dimensions}
-                                isReviewed={isReviewed}
-                            />
-                        </TabPane>
-                        <TabPane tab="📝 指标评分" key="indicators">
-                            <IndicatorScores
-                                submission={submission}
-                                dimensions={dimensions}
-                                scores={scores}
-                                onScoreChange={handleScoreChange}
-                                isPending={false}
-                                isReviewed={true}
-                            />
-                        </TabPane>
-                        <TabPane tab="📄 测评报告" key="report">
-                            <ReportPanel
-                                submissionId={submission.id}
-                                isReviewed={submission.is_reviewed}
-                                onReportChange={(reportData) => {
-                                    console.log('报告已更新:', reportData);
-                                }}
-                            />
-                        </TabPane>
-                    </Tabs>
+                    {renderStudentInfo(<Tag color="green">已发布</Tag>)}
+                    {renderScoreTabs(false)}
                 </div>
             </Modal>
         );
@@ -282,63 +333,8 @@ export const ReviewModal = ({
                 }
             >
                 <div style={{ maxHeight: '70vh', overflow: 'auto', paddingRight: 8 }}>
-                    <Descriptions column={2} bordered size="small" style={{ marginBottom: 16 }}>
-                        <Descriptions.Item label="学号">{submission.student_username}</Descriptions.Item>
-                        <Descriptions.Item label="姓名">
-                            {submission.student_name || submission.student_username}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="任务">{submission.task_title}</Descriptions.Item>
-                        <Descriptions.Item label="提交时间">
-                            {submission.submit_time?.replace('T', ' ').substring(0, 19)}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="提交方式">
-                            {submission.submit_type === 'word' ? 'Word文档' : '文本框'}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="状态" span={2}>
-                            <Space>
-                                <Tag color="orange">已批改，未发布</Tag>
-                                {isReviewed && (
-                                    <Tag color={levelColor}>
-                                        {level} - {totalScore.toFixed(2)}分
-                                    </Tag>
-                                )}
-                            </Space>
-                        </Descriptions.Item>
-                    </Descriptions>
-
-                    <Tabs activeKey={activeTab} onChange={setActiveTab}>
-                        <TabPane tab="📄 提交内容" key="content">
-                            <SubmissionContent submission={submission} onOpenWord={onOpenWord} />
-                        </TabPane>
-                        <TabPane tab="📊 评分详情" key="scores">
-                            <ScoreSummary
-                                totalScore={totalScore}
-                                level={level}
-                                dimensionScores={dimensionScores}
-                                dimensions={dimensions}
-                                isReviewed={isReviewed}
-                            />
-                        </TabPane>
-                        <TabPane tab="📝 指标评分" key="indicators">
-                            <IndicatorScores
-                                submission={submission}
-                                dimensions={dimensions}
-                                scores={scores}
-                                onScoreChange={handleScoreChange}
-                                isPending={false}
-                                isReviewed={true}
-                            />
-                        </TabPane>
-                        <TabPane tab="📄 测评报告" key="report">
-                            <ReportPanel
-                                submissionId={submission.id}
-                                isReviewed={submission.is_reviewed}
-                                onReportChange={(reportData) => {
-                                    console.log('报告已更新:', reportData);
-                                }}
-                            />
-                        </TabPane>
-                    </Tabs>
+                    {renderStudentInfo(<Tag color="orange">已批改，未发布</Tag>)}
+                    {renderScoreTabs(false)}
                 </div>
             </Modal>
         );
@@ -379,65 +375,12 @@ export const ReviewModal = ({
             }
         >
             <div style={{ maxHeight: '70vh', overflow: 'auto', paddingRight: 8 }}>
-                <Descriptions column={2} bordered size="small" style={{ marginBottom: 16 }}>
-                    <Descriptions.Item label="学号">{submission.student_username}</Descriptions.Item>
-                    <Descriptions.Item label="姓名">
-                        {submission.student_name || submission.student_username}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="任务">{submission.task_title}</Descriptions.Item>
-                    <Descriptions.Item label="提交时间">
-                        {submission.submit_time?.replace('T', ' ').substring(0, 19)}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="提交方式">
-                        {submission.submit_type === 'word' ? 'Word文档' : '文本框'}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="状态" span={2}>
-                        <Space>
-                            <Tag color={isPublished ? 'green' : isReviewed ? 'orange' : 'red'}>
-                                {isPublished ? '已发布' : isReviewed ? '已批改，未发布' : '待批改'}
-                            </Tag>
-                            {isReviewed && (
-                                <Tag color={levelColor}>
-                                    {level} - {totalScore.toFixed(2)}分
-                                </Tag>
-                            )}
-                        </Space>
-                    </Descriptions.Item>
-                </Descriptions>
-
-                <Tabs activeKey={activeTab} onChange={setActiveTab}>
-                    <TabPane tab="📄 提交内容" key="content">
-                        <SubmissionContent submission={submission} onOpenWord={onOpenWord} />
-                    </TabPane>
-                    <TabPane tab="📊 评分详情" key="scores">
-                        <ScoreSummary
-                            totalScore={totalScore}
-                            level={level}
-                            dimensionScores={dimensionScores}
-                            dimensions={dimensions}
-                            isReviewed={isReviewed}
-                        />
-                    </TabPane>
-                    <TabPane tab="📝 指标评分" key="indicators">
-                        <IndicatorScores
-                            submission={submission}
-                            dimensions={dimensions}
-                            scores={scores}
-                            onScoreChange={handleScoreChange}
-                            isPending={isPending}
-                            isReviewed={isReviewed}
-                        />
-                    </TabPane>
-                    <TabPane tab="📄 测评报告" key="report">
-                        <ReportPanel
-                            submissionId={submission.id}
-                            isReviewed={submission.is_reviewed}
-                            onReportChange={(reportData) => {
-                                console.log('报告已更新:', reportData);
-                            }}
-                        />
-                    </TabPane>
-                </Tabs>
+                {renderStudentInfo(
+                    <Tag color={isPublished ? 'green' : isReviewed ? 'orange' : 'red'}>
+                        {isPublished ? '已发布' : isReviewed ? '已批改，未发布' : '待批改'}
+                    </Tag>
+                )}
+                {renderScoreTabs(true)}
             </div>
         </Modal>
     );

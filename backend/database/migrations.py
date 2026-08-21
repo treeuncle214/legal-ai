@@ -5,118 +5,99 @@
 import os
 from sqlalchemy import inspect, text
 
-from backend.config import DB_PATH
+from backend.config import DB_PATH, DATABASE_URL
 from backend.database.engine import engine, SessionLocal
 from backend.database.models import User, Task, Submission, Rubric
 from backend.config import SCORING_DIMENSIONS
 
+# 判断是否 PostgreSQL
+IS_POSTGRESQL = DATABASE_URL.startswith("postgresql")
+
+
+def _column_exists(table_name: str, column_name: str) -> bool:
+    """检查列是否存在"""
+    inspector = inspect(engine)
+    existing_columns = [col["name"] for col in inspector.get_columns(table_name)]
+    return column_name in existing_columns
+
+
+def _add_column(table_name: str, column_name: str, column_type: str, default: str = None):
+    """通用列添加函数，兼容 SQLite 和 PostgreSQL"""
+    if _column_exists(table_name, column_name):
+        print(f"ℹ️ {table_name}.{column_name} 列已存在")
+        return
+    
+    with engine.connect() as conn:
+        if default is not None:
+            sql = f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type} DEFAULT {default}"
+        else:
+            sql = f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
+        conn.execute(text(sql))
+        conn.commit()
+        print(f"✅ 添加列: {table_name}.{column_name}")
+
 
 def ensure_user_columns():
     """确保 User 表有新字段（college, major）"""
-    inspector = inspect(engine)
-    existing_columns = [col["name"] for col in inspector.get_columns("users")]
-    
-    with engine.connect() as conn:
-        if "college" not in existing_columns:
-            conn.execute(text("ALTER TABLE users ADD COLUMN college VARCHAR(100)"))
-            print("✅ 添加列: college")
-        else:
-            print("ℹ️ college 列已存在")
-        
-        if "major" not in existing_columns:
-            conn.execute(text("ALTER TABLE users ADD COLUMN major VARCHAR(100)"))
-            print("✅ 添加列: major")
-        else:
-            print("ℹ️ major 列已存在")
-        
-        conn.commit()
+    _add_column("users", "college", "VARCHAR(100)")
+    _add_column("users", "major", "VARCHAR(100)")
 
 
 def ensure_task_columns():
     """确保 Task 表有新字段"""
-    inspector = inspect(engine)
-    existing_columns = [col["name"] for col in inspector.get_columns("tasks")]
-    
-    with engine.connect() as conn:
-        if "task_type" not in existing_columns:
-            conn.execute(text("ALTER TABLE tasks ADD COLUMN task_type VARCHAR(20) DEFAULT '任务实践'"))
-            print("✅ 添加列: task_type")
-        
-        if "enabled_indicators" not in existing_columns:
-            conn.execute(text("ALTER TABLE tasks ADD COLUMN enabled_indicators VARCHAR(500) DEFAULT ''"))
-            print("✅ 添加列: enabled_indicators")
-        
-        if "max_submissions" not in existing_columns:
-            conn.execute(text("ALTER TABLE tasks ADD COLUMN max_submissions INTEGER DEFAULT 3"))
-            print("✅ 添加列: max_submissions")
-        
-        if "allow_after_deadline" not in existing_columns:
-            conn.execute(text("ALTER TABLE tasks ADD COLUMN allow_after_deadline INTEGER DEFAULT 0"))
-            print("✅ 添加列: allow_after_deadline")
-        
-        if "attachment_path" not in existing_columns:
-            conn.execute(text("ALTER TABLE tasks ADD COLUMN attachment_path VARCHAR(500)"))
-            print("✅ 添加列: attachment_path")
-        
-        if "attachment_filename" not in existing_columns:
-            conn.execute(text("ALTER TABLE tasks ADD COLUMN attachment_filename VARCHAR(200)"))
-            print("✅ 添加列: attachment_filename")
-        
-        conn.commit()
+    _add_column("tasks", "task_type", "VARCHAR(20)", "'任务实践'")
+    _add_column("tasks", "enabled_indicators", "VARCHAR(500)", "''")
+    _add_column("tasks", "max_submissions", "INTEGER", "3")
+    _add_column("tasks", "allow_after_deadline", "INTEGER", "0")
+    _add_column("tasks", "attachment_path", "VARCHAR(500)")
+    _add_column("tasks", "attachment_filename", "VARCHAR(200)")
+    _add_column("tasks", "weight", "INTEGER", "5")
+    _add_column("tasks", "rubric_template_id", "INTEGER")
+    _add_column("tasks", "task_rubric_id", "INTEGER")
+    _add_column("tasks", "custom_prompt", "TEXT")
 
 
 def ensure_submission_columns():
     """确保 Submission 表有新列"""
-    inspector = inspect(engine)
-    existing_columns = [col["name"] for col in inspector.get_columns("submissions")]
+    # 维度得分列
+    for dim in SCORING_DIMENSIONS:
+        key = dim["key"]
+        _add_column("submissions", f"score_{key}", "FLOAT", "0")
+        _add_column("submissions", f"level_{key}", "VARCHAR(10)", "''")
+        _add_column("submissions", f"final_score_{key}", "FLOAT", "0")
     
-    with engine.connect() as conn:
-        # 维度得分列
-        for dim in SCORING_DIMENSIONS:
-            key = dim["key"]
-            for suffix, col_type in [("score", "FLOAT"), ("level", "VARCHAR(10)"), ("final_score", "FLOAT")]:
-                col_name = f"{suffix}_{key}"
-                if col_name not in existing_columns:
-                    default = "''" if suffix == "level" else "0"
-                    conn.execute(text(f"ALTER TABLE submissions ADD COLUMN {col_name} {col_type} DEFAULT {default}"))
-                    print(f"✅ 添加列: {col_name}")
-        
-        # AI 评分相关字段
-        ai_score_fields = [
-            ("ai_score_status", "VARCHAR(20)", "'pending'"),
-            ("ai_score_error", "TEXT", "NULL"),
-            ("ai_score_detail", "TEXT", "NULL")
-        ]
-        
-        for field_name, field_type, default in ai_score_fields:
-            if field_name not in existing_columns:
-                conn.execute(text(f"ALTER TABLE submissions ADD COLUMN {field_name} {field_type} DEFAULT {default}"))
-                print(f"✅ 添加列: {field_name}")
-        
-        # AI 评分控制字段
-        ai_control_fields = [
-            ("ai_scored", "BOOLEAN", "0"),
-            ("ai_scored_at", "DATETIME", "NULL"),
-            ("ai_scored_by", "VARCHAR(50)", "NULL")
-        ]
-        
-        for field_name, field_type, default in ai_control_fields:
-            if field_name not in existing_columns:
-                conn.execute(text(f"ALTER TABLE submissions ADD COLUMN {field_name} {field_type} DEFAULT {default}"))
-                print(f"✅ 添加列: {field_name}")
-        
-        # 测评报告字段
-        report_fields = [
-            ("evaluation_report", "TEXT", "NULL"),
-            ("report_generated_at", "DATETIME", "NULL")
-        ]
-        
-        for field_name, field_type, default in report_fields:
-            if field_name not in existing_columns:
-                conn.execute(text(f"ALTER TABLE submissions ADD COLUMN {field_name} {field_type} DEFAULT {default}"))
-                print(f"✅ 添加列: {field_name}")
-        
-        conn.commit()
+    # AI 评分相关字段
+    _add_column("submissions", "ai_score_status", "VARCHAR(20)", "'pending'")
+    _add_column("submissions", "ai_score_error", "TEXT")
+    _add_column("submissions", "ai_score_detail", "TEXT")
+    
+    # AI 评分控制字段
+    _add_column("submissions", "ai_scored", "BOOLEAN", "0")
+    _add_column("submissions", "ai_scored_at", "TIMESTAMP")
+    _add_column("submissions", "ai_scored_by", "VARCHAR(50)")
+    
+    # 测评报告字段
+    _add_column("submissions", "evaluation_report", "TEXT")
+    _add_column("submissions", "report_generated_at", "TIMESTAMP")
+    
+    # 教师审批字段
+    _add_column("submissions", "is_reviewed", "INTEGER", "0")
+    _add_column("submissions", "teacher_comment", "TEXT")
+    _add_column("submissions", "reviewed_by", "VARCHAR(100)")
+    _add_column("submissions", "reviewed_at", "TIMESTAMP")
+    _add_column("submissions", "score_published", "INTEGER", "0")
+    _add_column("submissions", "total_score", "FLOAT", "0")
+    
+    # 提交内容字段
+    _add_column("submissions", "process_log", "TEXT")
+    _add_column("submissions", "ai_interaction_log", "TEXT")
+    _add_column("submissions", "final_output", "TEXT")
+    _add_column("submissions", "tools_used", "TEXT")
+    _add_column("submissions", "word_file_path", "VARCHAR(500)")
+    _add_column("submissions", "word_content", "TEXT")
+    _add_column("submissions", "submit_type", "VARCHAR(20)", "'text'")
+    _add_column("submissions", "original_filenames", "TEXT")
+    _add_column("submissions", "resubmit_count", "INTEGER", "0")
 
 
 def migrate_old_score_columns():
@@ -127,26 +108,18 @@ def migrate_old_score_columns():
     has_old = any(col in existing for col in ["score_tool", "score_strategy"])
     
     if not has_old:
+        print("ℹ️ 无旧版评分数据需要迁移")
         return
     
     print("⚠️ 检测到旧版评分数据，尝试迁移...")
     
     with engine.connect() as conn:
-        # 获取所有列名
         columns = [col["name"] for col in inspector.get_columns("submissions")]
         
-        # 动态构建查询
         select_cols = ["id"]
-        if "score_tool" in columns:
-            select_cols.append("score_tool")
-        if "score_strategy" in columns:
-            select_cols.append("score_strategy")
-        if "score_critical" in columns:
-            select_cols.append("score_critical")
-        if "score_ethics" in columns:
-            select_cols.append("score_ethics")
-        if "score_creative" in columns:
-            select_cols.append("score_creative")
+        for col in ["score_tool", "score_strategy", "score_critical", "score_ethics", "score_creative"]:
+            if col in columns:
+                select_cols.append(col)
         
         query = f"SELECT {', '.join(select_cols)} FROM submissions"
         result = conn.execute(text(query))
@@ -155,7 +128,6 @@ def migrate_old_score_columns():
         for row in rows:
             updates = {}
             
-            # 旧 key -> 新 key 映射
             if hasattr(row, 'score_tool') and hasattr(row, 'score_strategy'):
                 if row.score_tool is not None and row.score_strategy is not None:
                     updates["score_ai_retrieval"] = (row.score_tool + row.score_strategy) / 2
@@ -183,44 +155,25 @@ def migrate_old_score_columns():
 
 
 def add_ai_score_status_column():
-    """添加AI评分状态字段（使用SQLAlchemy）"""
-    inspector = inspect(engine)
-    existing_columns = [col["name"] for col in inspector.get_columns("submissions")]
-    
-    with engine.connect() as conn:
-        if 'ai_score_status' not in existing_columns:
-            conn.execute(text("ALTER TABLE submissions ADD COLUMN ai_score_status VARCHAR(20) DEFAULT 'pending'"))
-            print("✅ 添加列: ai_score_status")
-        else:
-            print("ℹ️ ai_score_status 列已存在")
-            
-        if 'ai_score_error' not in existing_columns:
-            conn.execute(text("ALTER TABLE submissions ADD COLUMN ai_score_error TEXT"))
-            print("✅ 添加列: ai_score_error")
-        else:
-            print("ℹ️ ai_score_error 列已存在")
-            
-        if 'ai_score_detail' not in existing_columns:
-            conn.execute(text("ALTER TABLE submissions ADD COLUMN ai_score_detail TEXT"))
-            print("✅ 添加列: ai_score_detail")
-        else:
-            print("ℹ️ ai_score_detail 列已存在")
-        
-        conn.commit()
+    """添加AI评分状态字段"""
+    _add_column("submissions", "ai_score_status", "VARCHAR(20)", "'pending'")
+    _add_column("submissions", "ai_score_error", "TEXT")
+    _add_column("submissions", "ai_score_detail", "TEXT")
 
 
 def init_db():
     """初始化数据库"""
     from backend.database.engine import Base
     
-    # 确保数据目录存在
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    # 确保数据目录存在（仅 SQLite 需要）
+    if not IS_POSTGRESQL:
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     
     # 创建所有表
     Base.metadata.create_all(bind=engine)
     
     # 确保新字段存在
-    ensure_user_columns()      # 🆕 添加用户表字段
+    ensure_user_columns()
     ensure_task_columns()
     ensure_submission_columns()
     
@@ -241,38 +194,27 @@ def init_db():
                 display_name="管理员"
             )
             db.add(admin_user)
-            
-            test_student = User(
+            db.commit()
+            print("✅ 默认账号已创建：admin/admin123（教师）")
+        else:
+            # 确保现有账号密码被正确哈希
+            if len(admin.password) < 20:
+                admin.password = get_password_hash("admin123")
+                db.commit()
+                print("✅ 已更新admin密码哈希")
+        
+        # 创建测试学生账号
+        test_student = db.query(User).filter(User.username == "2024001").first()
+        if not test_student:
+            student_user = User(
                 username="2024001",
                 password=get_password_hash("123456"),
                 role="student",
                 display_name="张三"
             )
-            db.add(test_student)
-            
+            db.add(student_user)
             db.commit()
-            print("✅ 默认账号已创建：admin/admin123（教师）、2024001/123456（学生）")
-        else:
-            # 确保现有账号密码被正确哈希（如果是明文密码）
-            if len(admin.password) < 20:  # 简单判断是否为哈希值
-                admin.password = get_password_hash("admin123")
-                db.commit()
-                print("✅ 已更新admin密码哈希")
-        
-        # 添加更多测试学生（可选）
-        for i in range(2, 6):
-            student_username = f"202400{i}"
-            student = db.query(User).filter(User.username == student_username).first()
-            if not student:
-                test_student = User(
-                    username=student_username,
-                    password=get_password_hash("123456"),
-                    role="student",
-                    display_name=f"测试学生{i}"
-                )
-                db.add(test_student)
-        db.commit()
-        print("✅ 测试学生账号已创建")
+            print("✅ 测试学生账号已创建：2024001/123456")
         
     except Exception as e:
         print(f"⚠️ 创建默认账号失败: {e}")

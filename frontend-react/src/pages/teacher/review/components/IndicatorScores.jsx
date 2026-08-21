@@ -15,10 +15,8 @@ export const IndicatorScores = ({
     const indicatorScores = submission.indicator_scores || {};
     const indicatorLevels = submission.indicator_levels || {};
     const indicatorComments = submission.indicator_comments || {};
-    // ✅ 使用 ai_original_scores（后端返回的 AI 原始分数）
     const aiOriginalScores = submission.ai_original_scores || {};
     const indicatorMaxScores = submission.indicator_max_scores || {};
-    // ✅ 获取启用指标列表
     const enabledIndicators = submission.enabled_indicators || [];
 
     // ✅ 获取指标满分（默认10分）
@@ -26,21 +24,18 @@ export const IndicatorScores = ({
         return indicatorMaxScores[key] || 10;
     };
 
-    // ✅ 判断指标是否涉及（任务启用且AI有评分）
+    // ✅ 判断指标是否涉及
     const isIndicatorInvolved = (key) => {
-        // 1. 检查任务是否启用了该指标
         if (Array.isArray(enabledIndicators) && enabledIndicators.length > 0) {
             if (!enabledIndicators.includes(key)) {
                 return false;
             }
         }
-        // 2. 检查 AI 是否给出了分数或评语
         const score = indicatorScores[key];
         const comment = indicatorComments[key];
         if (score === undefined || score === null) {
             return false;
         }
-        // 如果分数为0但有评语，说明涉及了但得0分
         if (score === 0 && (!comment || comment.trim() === '')) {
             return false;
         }
@@ -80,11 +75,9 @@ export const IndicatorScores = ({
         const levelColor = getLevelColor(level);
         const maxScore = getIndicatorMaxScore(key);
         const involved = isIndicatorInvolved(key);
-        // ✅ 获取 AI 原始分数
         const originalScore = aiOriginalScores[key];
         const hasChanged = originalScore !== undefined && originalScore !== null && originalScore !== score;
 
-        // ✅ 如果指标未涉及，显示"本次作业未涉及"
         if (!involved) {
             return (
                 <span style={{ color: '#999', fontSize: 14 }}>
@@ -124,24 +117,38 @@ export const IndicatorScores = ({
                 )}
                 <Tag color={levelColor}>{level}</Tag>
                 {comment && (
-                    <Tooltip title="点击查看AI评语">
-                        <Popover
-                            content={
-                                <div style={{ maxWidth: 350, whiteSpace: 'pre-wrap' }}>
-                                    <strong>💬 AI评价：</strong>
-                                    <br />
-                                    {comment}
-                                </div>
-                            }
-                            trigger="click"
-                            placement="bottom"
-                        >
-                            <MessageOutlined style={{ color: '#faad14', fontSize: 14, cursor: 'pointer' }} />
-                        </Popover>
-                    </Tooltip>
+                    <Popover
+                        content={
+                            <div style={{ maxWidth: 350, whiteSpace: 'pre-wrap' }}>
+                                <strong>💬 AI评价：</strong>
+                                <br />
+                                {comment}
+                            </div>
+                        }
+                        trigger="click"
+                        placement="bottom"
+                    >
+                        <MessageOutlined style={{ color: '#faad14', fontSize: 14, cursor: 'pointer' }} />
+                    </Popover>
                 )}
             </Space>
         );
+    };
+
+    // ✅ 获取当前分数（优先使用 scores 状态中的值）
+    const getCurrentScore = (key) => {
+        // 如果 scores 中有该指标的新值，使用新值
+        if (scores && scores[key] !== undefined && scores[key] !== null) {
+            return scores[key];
+        }
+        // 否则使用 submission 中的原始值
+        return indicatorScores[key] || 0;
+    };
+
+    // ✅ 获取当前等级
+    const getCurrentLevel = (key, score) => {
+        // 使用传入的 score 计算等级
+        return indicatorLevels[key] || getLevelByScore(score);
     };
 
     if (isReviewed && !isPending) {
@@ -186,9 +193,10 @@ export const IndicatorScores = ({
 
                     return indicators.map(ind => {
                         const key = ind.key;
-                        const currentScore = indicatorScores[key] || 0;
+                        // ✅ 使用 scores 状态中的值（修改后立即显示）
+                        const currentScore = getCurrentScore(key);
                         const comment = indicatorComments[key];
-                        const level = indicatorLevels[key] || getLevelByScore(currentScore);
+                        const level = getCurrentLevel(key, currentScore);
 
                         return (
                             <Descriptions.Item

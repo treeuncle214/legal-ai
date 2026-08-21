@@ -31,6 +31,15 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
             update_ai_score_status(submission_id, "failed", error_message="提交记录不存在")
             return
         
+        # ✅ 确保 task_dict 包含完整的任务信息
+        if not task_dict.get("description"):
+            # 如果 task_dict 中缺少 description，从数据库重新获取
+            full_task = get_task(task_dict.get("id"))
+            if full_task:
+                task_dict["description"] = full_task.get("description", "")
+                task_dict["custom_prompt"] = full_task.get("custom_prompt", "")
+                logger.info(f"✅ 从数据库补充任务描述: {task_dict['description'][:50]}...")
+        
         # 构建完整的评分数据
         score_data = {
             "process_log": submission.get("process_log", ""),
@@ -66,7 +75,8 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
             "score_integration": score_result["dimension_scores"].get("integration", 0),
             "ai_comment": score_result.get("ai_comment", "AI评分完成"),
             "ai_score_status": "completed",
-            "ai_score_detail": json.dumps(score_result.get("indicator_grades", {})) if "indicator_grades" in score_result else json.dumps(score_result.get("module_scores", {}))
+            "ai_score_detail": json.dumps(score_result.get("indicator_grades", {})) if "indicator_grades" in score_result else json.dumps(score_result.get("module_scores", {})),
+            "total_score": score_result.get("total_score", 0)
         }
         update_scores(submission_id, scores_dict)
         

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Button, Upload, Card, message, Descriptions, Spin, Alert, Row, Col } from 'antd';
-import { InboxOutlined, CheckCircleOutlined, FileWordOutlined } from '@ant-design/icons';
+import { Button, Upload, Card, message, Descriptions, Spin, Alert, Row, Col, Tag, Divider } from 'antd';
+import { InboxOutlined, CheckCircleOutlined, FileWordOutlined, FileTextOutlined, ClockCircleOutlined, UploadOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
-import { submitWord, getTaskDetail, getRemainingSubmissions } from '../../api';
+import { submitWord, getTaskDetail, getRemainingSubmissions, downloadTaskAttachment } from '../../api';
 
 const { Dragger } = Upload;
 
@@ -61,6 +61,16 @@ export default function StudentSubmit() {
         }
     }, [taskId]);
 
+    const handleDownloadAttachment = async () => {
+        try {
+            await downloadTaskAttachment(taskId);
+            message.success('开始下载');
+        } catch (error) {
+            console.error('下载失败:', error);
+            message.error('下载失败，请重试');
+        }
+    };
+
     const handleSubmit = async () => {
         if (!file1 || !file2) {
             message.error('请同时上传两个Word文档');
@@ -116,25 +126,75 @@ export default function StudentSubmit() {
 
     return (
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 16px' }}>
-            <Card title={`提交作业：${task?.title || '加载中...'}`} style={{ marginBottom: 16 }}>
-                <Descriptions column={2} bordered size="small">
-                    <Descriptions.Item label="任务描述" span={2}>{task?.description || '无'}</Descriptions.Item>
-                    <Descriptions.Item label="截止时间">
-                        <span style={{ color: remainingInfo.is_deadline_passed ? '#ff4d4f' : 'inherit' }}>
+            {/* ✅ 任务信息卡片 - 优化显示 */}
+            <Card
+                title={
+                    <span style={{ fontSize: 18, fontWeight: 'bold' }}>
+                        📝 {task?.title || '加载中...'}
+                    </span>
+                }
+                style={{ marginBottom: 16 }}
+            >
+                {/* 任务状态标签 */}
+                <div style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Tag color={remainingInfo.is_deadline_passed ? 'red' : 'green'}>
+                        <ClockCircleOutlined /> {remainingInfo.is_deadline_passed ? '已截止' : '进行中'}
+                    </Tag>
+                    <Tag color="blue">
+                        最多提交 {remainingInfo.max_submissions} 次
+                    </Tag>
+                    <Tag color={remainingInfo.remaining <= 0 ? 'red' : 'green'}>
+                        剩余 {remainingInfo.remaining} 次
+                    </Tag>
+                    {task?.has_attachment && (
+                        <Tag
+                            color="purple"
+                            style={{ cursor: 'pointer' }}
+                            onClick={handleDownloadAttachment}
+                        >
+                            📎 下载附件模板
+                        </Tag>
+                    )}
+                </div>
+
+                {/* ✅ 任务描述 - 保留换行格式 */}
+                <Divider orientation="left" style={{ marginTop: 0, marginBottom: 12 }}>
+                    <FileTextOutlined /> 任务要求
+                </Divider>
+                <div style={{
+                    background: '#fafafa',
+                    padding: '16px 20px',
+                    borderRadius: 8,
+                    border: '1px solid #f0f0f0',
+                    fontSize: 15,
+                    lineHeight: 1.8,
+                    whiteSpace: 'pre-wrap',  // ✅ 保留换行
+                    wordBreak: 'break-word',
+                    marginBottom: 16,
+                    color: '#333',
+                }}>
+                    {task?.description || '暂无任务描述'}
+                </div>
+
+                {/* 提交信息 */}
+                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 14, color: '#666' }}>
+                    <span>
+                        <ClockCircleOutlined /> 截止时间：
+                        <span style={{ color: remainingInfo.is_deadline_passed ? '#ff4d4f' : 'inherit', fontWeight: 500 }}>
                             {task?.due_date || '不限时'}
-                            {remainingInfo.is_deadline_passed && <span style={{ marginLeft: 8 }}>（已截止）</span>}
                         </span>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="提交次数">
-                        <span style={{ color: remainingInfo.remaining <= 0 ? '#ff4d4f' : '#52c41a' }}>
-                            已提交 {remainingInfo.submitted_count} 次，剩余 {remainingInfo.remaining} 次（最多 {remainingInfo.max_submissions} 次）
+                    </span>
+                    <span>
+                        <UploadOutlined /> 提交次数：
+                        <span style={{ color: remainingInfo.remaining <= 0 ? '#ff4d4f' : '#52c41a', fontWeight: 500 }}>
+                            已提交 {remainingInfo.submitted_count} 次，剩余 {remainingInfo.remaining} 次
                         </span>
-                    </Descriptions.Item>
-                </Descriptions>
+                    </span>
+                </div>
             </Card>
 
-            {/* ✅ 修复：styles.body 替代 bodyStyle */}
-            <Card title="📤 上传作业文档" styles={{ body: { padding: '24px 16px' } }}>
+            {/* ✅ 上传作业文档 */}
+            <Card title="📤 上传作业文档" style={{ marginBottom: 16 }}>
                 <Row gutter={[24, 16]}>
                     {/* 文件1：AI交互记录 */}
                     <Col xs={24} md={12}>

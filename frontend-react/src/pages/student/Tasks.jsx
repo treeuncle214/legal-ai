@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Table, Tag, Button, message, Tooltip } from 'antd';
 import { useNavigate } from 'react-router-dom';
-import { DownloadOutlined } from '@ant-design/icons';
+import { DownloadOutlined, FileTextOutlined } from '@ant-design/icons';
 import { getTasks, downloadTaskAttachment } from '../../api';
 import dayjs from 'dayjs';
 
@@ -27,10 +27,10 @@ export default function StudentTasks() {
         fetchTasks();
     }, []);
 
-    const handleDownloadAttachment = async (taskId, filename) => {
+    const handleDownloadAttachment = async (taskId) => {
         try {
             await downloadTaskAttachment(taskId);
-            message.success(`开始下载: ${filename || '模板'}`);
+            message.success('开始下载');
         } catch (error) {
             console.error('下载失败:', error);
             message.error('下载失败，请重试');
@@ -43,6 +43,12 @@ export default function StudentTasks() {
             dataIndex: 'title',
             key: 'title',
             width: 200,
+            render: (text, record) => (
+                <span>
+                    <FileTextOutlined style={{ marginRight: 8, color: '#1890ff' }} />
+                    {text}
+                </span>
+            ),
         },
         {
             title: '截止时间',
@@ -80,7 +86,7 @@ export default function StudentTasks() {
                                 type="link"
                                 icon={<DownloadOutlined />}
                                 size="small"
-                                onClick={() => handleDownloadAttachment(record.id, record.attachment_filename)}
+                                onClick={() => handleDownloadAttachment(record.id)}
                             >
                                 下载模板
                             </Button>
@@ -113,6 +119,23 @@ export default function StudentTasks() {
             rowKey="id"
             loading={loading}
             pagination={{ pageSize: 10 }}
+            expandable={{
+                expandedRowRender: (record) => (
+                    <div style={{
+                        padding: '12px 16px',
+                        background: '#fafafa',
+                        borderRadius: 6,
+                        fontSize: 14,
+                        lineHeight: 1.8,
+                        whiteSpace: 'pre-wrap',  // ✅ 保留换行
+                        wordBreak: 'break-word',
+                        color: '#555',
+                    }}>
+                        {record.description || '暂无任务描述'}
+                    </div>
+                ),
+                rowExpandable: (record) => !!record.description,
+            }}
         />
     );
 }

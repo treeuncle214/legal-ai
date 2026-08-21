@@ -1,15 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Card, Table, Tag, message, Empty, Spin, Button, Modal, Descriptions, Progress, Row, Col, Divider, Typography } from 'antd';
+import { Card, Table, Tag, message, Empty, Spin, Button, Modal, Descriptions, Row, Col, Divider, Typography } from 'antd';
 import { EyeOutlined } from '@ant-design/icons';
-import { getPublishedScores, getStudentProfile} from '../../api';
+import { getPublishedScores } from '../../api';
 
 const { Title, Text } = Typography;
 
 export default function ScoreSummary() {
     const [scores, setScores] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [profile, setProfile] = useState(null);
-    const [profileLoading, setProfileLoading] = useState(false);
     const [detailModalOpen, setDetailModalOpen] = useState(false);
     const [selectedScore, setSelectedScore] = useState(null);
 
@@ -52,19 +50,6 @@ export default function ScoreSummary() {
         'D1': 'integration', 'D2': 'integration', 'D3': 'integration',
     };
 
-    // 获取当前用户信息
-    const getCurrentUser = () => {
-        try {
-            const userStr = sessionStorage.getItem('studentUser');
-            if (!userStr) return null;
-            return JSON.parse(userStr);
-        } catch {
-            return null;
-        }
-    };
-
-    const currentUser = getCurrentUser();
-
     // 获取已发布成绩
     const fetchPublishedScores = async () => {
         setLoading(true);
@@ -88,28 +73,8 @@ export default function ScoreSummary() {
         }
     };
 
-    // 获取能力画像
-    const fetchProfile = async () => {
-        if (!currentUser) return;
-        setProfileLoading(true);
-        try {
-            const data = await getStudentProfile(currentUser.username);
-            console.log('能力画像:', data);
-            if (data && data.data) {
-                setProfile(data.data);
-            } else {
-                setProfile(data);
-            }
-        } catch (error) {
-            console.error('获取能力画像失败:', error);
-        } finally {
-            setProfileLoading(false);
-        }
-    };
-
     useEffect(() => {
         fetchPublishedScores();
-        fetchProfile();
     }, []);
 
     // 查看详情
@@ -118,26 +83,23 @@ export default function ScoreSummary() {
         setDetailModalOpen(true);
     };
 
-    // 等级映射
-    const getLevel = (score, maxScore = 10) => {
-        const percentScore = maxScore === 10 ? score * 10 : score;
-        if (percentScore >= 85) return { text: '优', color: '#52c41a' };
-        if (percentScore >= 75) return { text: '良', color: '#1890ff' };
-        if (percentScore >= 55) return { text: '合格', color: '#faad14' };
+    // 等级映射（百分制）
+    const getLevel = (score) => {
+        if (score === 0) return { text: '未涉及', color: '#d9d9d9' };
+        if (score >= 85) return { text: '优秀', color: '#52c41a' };
+        if (score >= 75) return { text: '良好', color: '#1890ff' };
+        if (score >= 55) return { text: '合格', color: '#faad14' };
         return { text: '不合格', color: '#ff4d4f' };
     };
 
-    // 计算课程总成绩
-    const calculateTotalScore = () => {
-        if (!scores || scores.length === 0) return null;
-        const validScores = scores.filter(item => item.total_score && item.total_score > 0);
-        if (validScores.length === 0) return null;
-        const total = validScores.reduce((sum, item) => sum + (item.total_score || 0), 0);
-        return Math.round(total / validScores.length);
+    // 等级映射（十分制，用于指标得分）
+    const getLevelBy10Scale = (score) => {
+        if (score === 0) return { text: '未涉及', color: '#d9d9d9' };
+        if (score >= 8.5) return { text: '优秀', color: '#52c41a' };
+        if (score >= 7.5) return { text: '良好', color: '#1890ff' };
+        if (score >= 5.5) return { text: '合格', color: '#faad14' };
+        return { text: '不合格', color: '#ff4d4f' };
     };
-
-    const totalScore = calculateTotalScore();
-    const totalLevel = totalScore ? getLevel(totalScore) : null;
 
     // 渲染测评报告内容（用于教师评语）
     const renderReportContent = (reportData) => {
@@ -274,73 +236,6 @@ export default function ScoreSummary() {
         },
     ];
 
-    // 渲染能力画像
-    const renderProfileCard = () => {
-        if (!profile) return null;
-
-        const hasData = Object.values(profile).some(v => typeof v === 'number' && v > 0);
-        if (!hasData) {
-            return (
-                <Card title="📊 综合能力画像" style={{ marginBottom: 16 }} loading={profileLoading}>
-                    <Empty description="暂无能力画像数据，请先完成作业" />
-                </Card>
-            );
-        }
-
-        const dimensionKeys = ['ai_retrieval', 'critical', 'ethics', 'integration'];
-
-        return (
-            <Card
-                title="📊 综合能力画像"
-                style={{ marginBottom: 16 }}
-                loading={profileLoading}
-            >
-                <Row gutter={[16, 16]}>
-                    {dimensionKeys.map(key => {
-                        const score = profile[key] || 0;
-                        const level = getLevel(score);
-                        const label = DIMENSION_LABELS[key] || key;
-                        const color = DIMENSION_COLORS[key] || '#1890ff';
-                        return (
-                            <Col xs={24} sm={12} md={6} key={key}>
-                                <div style={{
-                                    textAlign: 'center',
-                                    padding: '12px',
-                                    background: '#fafafa',
-                                    borderRadius: 8,
-                                    border: '1px solid #f0f0f0'
-                                }}>
-                                    <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
-                                        {label}
-                                    </div>
-                                    <div style={{ fontSize: 28, fontWeight: 'bold', color: color }}>
-                                        {score.toFixed(1)}
-                                    </div>
-                                    <Tag color={level.color} style={{ marginTop: 4 }}>
-                                        {level.text}
-                                    </Tag>
-                                    <div style={{ marginTop: 8 }}>
-                                        <Progress
-                                            percent={Math.min(score, 100)}
-                                            strokeColor={color}
-                                            showInfo={false}
-                                            size="small"
-                                        />
-                                    </div>
-                                </div>
-                            </Col>
-                        );
-                    })}
-                </Row>
-                {profile.total_submissions !== undefined && (
-                    <div style={{ textAlign: 'center', marginTop: 12, color: '#999' }}>
-                        已完成 {profile.total_submissions} 份作业
-                    </div>
-                )}
-            </Card>
-        );
-    };
-
     // 渲染指标详情
     const renderIndicatorDetails = (indicatorScores) => {
         if (!indicatorScores || Object.keys(indicatorScores).length === 0) {
@@ -367,7 +262,7 @@ export default function ScoreSummary() {
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                                 {indicators.map(({ key, score }) => {
                                     const name = INDICATOR_NAMES[key] || key;
-                                    const level = getLevel(score);
+                                    const level = getLevelBy10Scale(score);
                                     return (
                                         <div
                                             key={key}
@@ -414,10 +309,6 @@ export default function ScoreSummary() {
         const hasReport = reportData && (
             (typeof reportData === 'string' && reportData.length > 0) ||
             (typeof reportData === 'object' && Object.keys(reportData).length > 0)
-        );
-
-        const hasValidDimension = dimensionKeys.some(key =>
-            selectedScore.dimension_scores && selectedScore.dimension_scores[key] > 0
         );
 
         return (
@@ -481,7 +372,6 @@ export default function ScoreSummary() {
                                 }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <span style={{ fontSize: 13, color: '#666' }}>{label}</span>
-                                        {/* ✅ 已删除权重标签 */}
                                     </div>
                                     {isScored ? (
                                         <div style={{ marginTop: 4 }}>
@@ -518,7 +408,7 @@ export default function ScoreSummary() {
                     </>
                 )}
 
-                {/* ✅ 教师评语：显示测评报告内容 */}
+                {/* 教师评语：显示测评报告内容 */}
                 <Divider orientation="left">教师评语</Divider>
                 <div style={{
                     background: '#f6ffed',
@@ -538,13 +428,9 @@ export default function ScoreSummary() {
         );
     };
 
-
-
     // 渲染主界面
     return (
         <div>
-            {renderProfileCard()}
-
             <Card title="📊 成绩列表">
                 <Spin spinning={loading}>
                     {scores.length > 0 ? (

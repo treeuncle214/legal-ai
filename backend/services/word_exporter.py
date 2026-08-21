@@ -159,7 +159,7 @@ def export_report_to_word(
     report_data: Dict,
     student_college: str = "",
     student_major: str = "",
-    total_score: float = 0.0  # ✅ 新增参数：从数据库读取的总分
+    total_score: float = 0.0
 ) -> str:
     """
     导出测评报告为Word文档
@@ -242,7 +242,7 @@ def export_report_to_word(
         set_cell_font(row_cells[2], "宋体", 10.5, bold=False)
         row_cells[2].text = level
 
-    # ✅ 总分行：直接使用从数据库读取的 total_score
+    # 总分行
     avg_level = "优" if total_score >= 85 else "良" if total_score >= 75 else "合格" if total_score >= 55 else "不合格"
     row_cells = table.add_row().cells
     set_cell_font(row_cells[0], "宋体", 10.5, bold=True)
@@ -320,14 +320,15 @@ def export_report_to_word(
             row_cells[1].text = name
             set_cell_font(row_cells[2], "宋体", 10.5, bold=False)
             
-            # ✅ 显示分数格式：得分/满分
-            if max_score > 0:
+            # ✅ 关键修改：如果分数为0，得分和满分都显示"本次未涉及"
+            if score > 0:
                 row_cells[2].text = f"{score:.1f} / {max_score}分"
+                set_cell_font(row_cells[3], "宋体", 10.5, bold=False)
+                row_cells[3].text = str(max_score)
             else:
-                row_cells[2].text = f"{score:.1f}"
-            
-            set_cell_font(row_cells[3], "宋体", 10.5, bold=False)
-            row_cells[3].text = str(max_score)
+                row_cells[2].text = "本次未涉及"
+                set_cell_font(row_cells[3], "宋体", 10.5, bold=False)
+                row_cells[3].text = "本次未涉及"
         
         doc.add_paragraph()
     

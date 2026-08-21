@@ -14,21 +14,26 @@ def build_exercise_prompt(
     submission: Dict,
     enabled_indicators: List[str],
     indicator_prompts: Dict[str, str] = None,
-    indicator_max_scores: Dict[str, int] = None  # ✅ 新增参数
+    indicator_max_scores: Dict[str, int] = None
 ) -> str:
     """
     构建平时练习评分 Prompt
     """
     # 获取任务信息
     task_title = task.get("title", "未命名任务")
-    task_description = task.get("description", "无描述")
+    task_description = task.get("description", "").strip() or "无具体描述"
+    task_type = task.get("task_type", "任务实践")
+    
+    # 将任务描述中的换行符保留
+    description_lines = task_description.split('\n')
+    formatted_description = '\n'.join([f"  {line}" if line.strip() else "" for line in description_lines])
     
     # 获取提交内容
     process_log = submission.get("process_log", "无记录")
     ai_interaction_log = submission.get("ai_interaction_log", "无记录")
     final_output = submission.get("final_output", "无内容")
     
-    # ✅ 构建启用指标列表（含满分信息，供AI参考）
+    # 构建启用指标列表
     indicator_list = []
     for key in enabled_indicators:
         name = INDICATOR_NAMES.get(key, key)
@@ -51,12 +56,19 @@ def build_exercise_prompt(
 2. **分数要有区分度**，不要集中在60分附近，要根据实际表现拉开差距
 3. **每个指标必须给出具体评语**，指出优点和不足
 4. 评语要个性化、有针对性，不要使用模板化语言
+5. **必须结合任务描述中的具体要求进行评分**，不能脱离任务背景
 
 ## 评分标准
 - 优秀(85-100)：表现突出，超出基本要求
 - 良好(75-84)：符合基本要求，有亮点
 - 合格(55-74)：基本达标，有改进空间  
 - 不合格(0-54)：未达到基本要求
+
+## 任务信息（评分时必须结合这些要求）
+- **任务标题**：{task_title}
+- **任务类型**：{task_type}
+- **任务要求**：
+{formatted_description}
 
 ## 本次作业启用的指标
 {indicators_text}
@@ -65,10 +77,6 @@ def build_exercise_prompt(
 - **作业正文**（检索策略、分析结论）重点评估：{doc1_text if doc1_text else '无'}
 - **AI交互记录**（提示词、AI输出、用户反馈）重点评估：{doc2_text if doc2_text else '无'}
 - **综合判断**：所有指标综合参考两份文档
-
-## 任务信息
-任务标题：{task_title}
-任务描述：{task_description}
 
 ## 学生提交内容
 
@@ -88,11 +96,6 @@ def build_exercise_prompt(
             "key": "A1",
             "score": 85,
             "comment": "能够准确识别核心法律问题，将复杂纠纷拆解为3个争议焦点，检索目标清晰。但缺少对次要问题的关注。"
-        }},
-        {{
-            "key": "A2",
-            "score": 72,
-            "comment": "检索策略基本合理，关键词选择较精准。但未使用更多同义词扩展检索，策略优化意识不足。"
         }}
     ],
     "overall_comment": "整体表现良好，问题拆解能力较强，但检索策略优化和信息源多样性需要提升。"

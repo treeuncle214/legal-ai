@@ -182,7 +182,7 @@ class ApiClient {
     }
 
     /**
-     * 文件上传
+     * 文件上传（POST）
      */
     upload(url, formData, options = {}) {
         return this.request(url, {
@@ -196,7 +196,21 @@ class ApiClient {
     }
 
     /**
-     * 文件下载
+     * 文件上传（PUT）
+     */
+    uploadPut(url, formData, options = {}) {
+        return this.request(url, {
+            ...options,
+            method: 'PUT',
+            body: formData,
+            headers: {
+                // 不设置 Content-Type，让浏览器自动设置 multipart/form-data
+            }
+        });
+    }
+
+    /**
+     * 文件下载 - 自动从响应头解析真实文件名
      */
     async download(url, filename, options = {}) {
         const token = this.getToken();
@@ -217,11 +231,35 @@ class ApiClient {
             throw new Error('下载失败');
         }
 
+        // ✅ 从响应头中获取真实文件名
+        let finalFilename = filename;
+        const contentDisposition = response.headers.get('Content-Disposition');
+
+        if (contentDisposition) {
+            console.log('📋 Content-Disposition:', contentDisposition);
+
+            // 优先解析 filename*=UTF-8''xxx 格式
+            const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+            if (utf8Match && utf8Match[1]) {
+                finalFilename = decodeURIComponent(utf8Match[1]);
+                console.log('✅ 从 UTF-8 编码解析文件名:', finalFilename);
+            } else {
+                // 解析 filename="xxx" 格式
+                const normalMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+                if (normalMatch && normalMatch[1]) {
+                    finalFilename = normalMatch[1].trim();
+                    console.log('✅ 从标准格式解析文件名:', finalFilename);
+                }
+            }
+        } else {
+            console.log('⚠️ 响应头中没有 Content-Disposition，使用传入的文件名:', filename);
+        }
+
         const blob = await response.blob();
         const downloadUrl = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = downloadUrl;
-        link.download = filename;
+        link.download = finalFilename;
         document.body.appendChild(link);
         link.click();
         link.remove();

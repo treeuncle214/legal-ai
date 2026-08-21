@@ -11,7 +11,6 @@ from backend.database.models import Submission, SubmissionScore
 
 logger = logging.getLogger(__name__)
 
-
 def update_scores(submission_id: int, scores: dict):
     """更新提交的评分数据"""
     db = SessionLocal()
@@ -30,6 +29,10 @@ def update_scores(submission_id: int, scores: dict):
         if "score_integration" in scores:
             submission.score_integration = scores["score_integration"]
         
+        # ✅ 新增：保存总分
+        if "total_score" in scores:
+            submission.total_score = scores["total_score"]
+        
         if "ai_comment" in scores:
             submission.ai_comment = scores["ai_comment"]
         
@@ -40,7 +43,7 @@ def update_scores(submission_id: int, scores: dict):
             submission.ai_score_detail = scores["ai_score_detail"]
         
         db.commit()
-        logger.info(f"提交 {submission_id} 评分更新成功")
+        logger.info(f"提交 {submission_id} 评分更新成功，总分: {submission.total_score}")
     except Exception as e:
         logger.error(f"更新提交 {submission_id} 评分失败: {e}")
         db.rollback()

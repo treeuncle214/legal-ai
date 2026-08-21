@@ -20,7 +20,8 @@ def add_task(
     rubric_template_id=None,
     task_rubric_id=None,
     attachment_path=None,
-    attachment_filename=None
+    attachment_filename=None,
+    weight=5  # ✅ 添加 weight 参数
 ):
     db = SessionLocal()
     try:
@@ -38,7 +39,8 @@ def add_task(
             rubric_template_id=rubric_template_id,
             task_rubric_id=task_rubric_id,
             attachment_path=attachment_path,
-            attachment_filename=attachment_filename
+            attachment_filename=attachment_filename,
+            weight=weight  # ✅ 传递 weight
         )
         db.add(task)
         db.commit()
@@ -57,7 +59,7 @@ def get_task(task_id):
         
         result = task.to_dict()
         
-        # ✅ 添加 rubric_config
+        # 添加 rubric_config
         task_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task_id).first()
         if task_rubric:
             indicators = db.query(TaskRubricIndicator).filter(
@@ -100,7 +102,7 @@ def get_all_tasks(include_inactive=False, class_id=None, teacher_id=None):
         for task in tasks:
             task_dict = task.to_dict()
             
-            # ✅ 添加 rubric_config
+            # 添加 rubric_config
             task_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task.id).first()
             if task_rubric:
                 indicators = db.query(TaskRubricIndicator).filter(
@@ -144,3 +146,38 @@ def update_task(task_id, **kwargs):
 
 def delete_task(task_id):
     return update_task(task_id, is_active=0)
+
+
+# ✅ 新增：获取班级已发布任务的权重总和
+def get_class_weight_sum(class_id: int) -> dict:
+    """获取班级已发布任务的权重总和"""
+    db = SessionLocal()
+    try:
+        from sqlalchemy import func
+        
+        # 总权重
+        total_weight = db.query(func.coalesce(func.sum(Task.weight), 0)).filter(
+            Task.class_id == class_id,
+            Task.is_active == 1
+        ).scalar()
+        
+        # 各类型权重
+        type_weights = db.query(
+            Task.task_type,
+            func.coalesce(func.sum(Task.weight), 0)
+        ).filter(
+            Task.class_id == class_id,
+            Task.is_active == 1
+        ).group_by(Task.task_type).all()
+        
+        return {
+            "class_id": class_id,
+            "total_weight": int(total_weight or 0),
+            "remaining_weight": max(0, 100 - int(total_weight or 0)),
+            "type_weights": [
+                {"task_type": t, "weight": int(w or 0)} 
+                for t, w in type_weights
+            ]
+        }
+    finally:
+        db.close()

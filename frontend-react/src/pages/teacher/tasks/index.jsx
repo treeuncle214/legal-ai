@@ -20,10 +20,8 @@ export default function TeacherTasks() {
     const [loading, setLoading] = useState(false);
     const [taskModalOpen, setTaskModalOpen] = useState(false);
     const [editingTask, setEditingTask] = useState(null);
-    const [taskType, setTaskType] = useState('任务实践');
     const [taskForm] = Form.useForm();
     const [classes, setClasses] = useState([]);
-    const [indicators, setIndicators] = useState([]);
     const [selectedTemplateId, setSelectedTemplateId] = useState(null);
 
     // ========== 模板相关（使用自定义Hook） ==========
@@ -101,46 +99,18 @@ export default function TeacherTasks() {
         }
     };
 
-    const fetchDimensions = async () => {
-        try {
-            const data = await getDimensions();
-            if (data?.dimensions) {
-                const all = [];
-                data.dimensions.forEach(dim => {
-                    if (dim.sub_indicators) {
-                        dim.sub_indicators.forEach(ind => {
-                            all.push({
-                                key: ind.key,
-                                name: ind.name,
-                                dimension: dim.key,
-                                dimensionName: dim.name,
-                            });
-                        });
-                    }
-                });
-                setIndicators(all);
-            }
-        } catch (error) {
-            console.error('获取维度配置失败:', error);
-        }
-    };
-
     useEffect(() => {
         fetchTasks();
         fetchClasses();
-        fetchDimensions();
         fetchTemplates();
     }, []);
 
     // ========== 任务操作 ==========
     const handleCreateTask = () => {
         setEditingTask(null);
-        setTaskType('任务实践');
         taskForm.resetFields();
         taskForm.setFieldsValue({
             task_type: '任务实践',
-            enabled_indicators: [],
-            custom_prompt: '',
             class_id: classes.length > 0 ? classes[0].id : undefined,
             weight: 5,
             max_submissions: 3,
@@ -153,7 +123,6 @@ export default function TeacherTasks() {
     const handleEditTask = (record) => {
         console.log('📝 编辑任务:', record);
         setEditingTask(record);
-        setTaskType(record.task_type || '任务实践');
         setSelectedTemplateId(record.rubric_template_id || null);
         setTaskModalOpen(true);
     };
@@ -161,18 +130,24 @@ export default function TeacherTasks() {
     const handleSubmitTask = async (values) => {
         try {
             if (values instanceof FormData) {
-                const response = await api.upload('/api/tasks', values);
-                message.success(editingTask ? '任务已更新' : '任务已发布');
+                if (editingTask) {
+                    // ✅ 编辑任务：使用 PUT 上传
+                    const response = await api.uploadPut(`/api/tasks/${editingTask.id}`, values);
+                    message.success('任务已更新');
+                } else {
+                    // ✅ 新建任务：使用 POST 上传
+                    const response = await api.upload('/api/tasks', values);
+                    message.success('任务已发布');
+                }
                 setTaskModalOpen(false);
                 fetchTasks();
             } else {
-                const enabledStr = values.enabled_indicators?.join(',') || '';
+                // JSON 格式提交（保留备用）
                 const taskData = {
                     title: values.title,
                     description: values.description,
                     due_date: values.due_date?.format('YYYY-MM-DD'),
                     task_type: values.task_type,
-                    enabled_indicators: enabledStr,
                     custom_prompt: values.custom_prompt || null,
                     class_id: values.class_id,
                     weight: values.weight || 5,
@@ -196,7 +171,7 @@ export default function TeacherTasks() {
             message.error('操作失败: ' + (error.response?.data?.detail || error.message));
         }
     };
-
+    
     const handleDeleteTask = async (id) => {
         try {
             await deleteTask(id);
@@ -411,12 +386,8 @@ export default function TeacherTasks() {
                 form={taskForm}
                 templates={templates}
                 classes={classes}
-                taskType={taskType}
-                setTaskType={setTaskType}
                 selectedTemplateId={selectedTemplateId}
                 setSelectedTemplateId={setSelectedTemplateId}
-                groupedIndicators={groupedIndicators}
-                indicators={indicators}
             />
 
             {/* 模板表单弹窗 */}

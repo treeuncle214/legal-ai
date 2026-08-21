@@ -333,7 +333,7 @@ export const updateTermSummary = (username, summary) =>
 
 // 下载任务附件
 export const downloadTaskAttachment = (taskId) =>
-    api.download(`/api/tasks/${taskId}/attachment`, `模板.docx`);
+    api.download(`/api/tasks/${taskId}/attachment`);
 
 // 创建任务（支持附件）
 export const createTaskWithAttachment = (formData) =>
@@ -433,6 +433,14 @@ export const reScoreSubmission = (submissionId) =>
  */
 export const unpublishSubmission = (submissionId) =>
     api.post(`/api/review/unpublish/${submissionId}`);
+
+
+/**
+ * 获取班级已发布任务的权重总和
+ * @param {number} classId - 班级ID
+ */
+export const getClassWeightSum = (classId) =>
+    api.get(`/api/classes/${classId}/weight-sum`);
 // ==================== 导出所有接口 ====================
 
 export { api };

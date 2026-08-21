@@ -1,11 +1,10 @@
-import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { ConfigProvider, App as AntApp } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 
 // 公共组件
 import AppLayout from './components/Layout';
-// ❌ 删除 ChangePassword 导入
 
 // 学生端页面
 import StudentLogin from './pages/student/Login';
@@ -19,17 +18,17 @@ import StudentPersonalInfo from './pages/student/PersonalInfo';
 // 教师端页面
 import TeacherLogin from './pages/teacher/Login';
 import TeacherTasks from './pages/teacher/tasks';
-import TeacherReview from './pages/teacher/Review';
+import TeacherReview from './pages/teacher/review';
 import TeacherScores from './pages/teacher/Scores';
 import TeacherStudentProfile from './pages/teacher/StudentProfile';
 import ClassManagement from './pages/teacher/class';
 import ClassDetail from './pages/teacher/ClassDetail';
+import UserManagement from './pages/teacher/users';
 import TeacherPersonalInfo from './pages/teacher/PersonalInfo';
 
 // 图标
 import {
   FileTextOutlined,
-  EditOutlined,
   UserOutlined,
   CheckCircleOutlined,
   BarChartOutlined,
@@ -82,7 +81,6 @@ function StudentLayout() {
         <Route path="score-summary" element={<ScoreSummary />} />
         <Route path="submit/:taskId" element={<StudentSubmit />} />
         <Route path="profile" element={<StudentProfile />} />
-        {/* 个人信息路由 */}
         <Route path="personal-info" element={<StudentPersonalInfo />} />
         <Route path="*" element={<Navigate to="tasks" replace />} />
       </Routes>
@@ -90,7 +88,7 @@ function StudentLayout() {
   );
 }
 
-// ==================== 教师端布局包装器 ====================
+// ==================== 教师端布局包装器（只有一个！） ====================
 
 function TeacherLayout() {
   const [user, setUser] = useState(() => {
@@ -114,13 +112,26 @@ function TeacherLayout() {
     return <Navigate to="/teacher/login" replace />;
   }
 
-  const menuItems = [
+  const isAdmin = user.username === 'admin';
+
+  const baseMenuItems = [
     { key: '/teacher/tasks', icon: <FileTextOutlined />, label: '任务管理' },
     { key: '/teacher/classes', icon: <TeamOutlined />, label: '班级管理' },
     { key: '/teacher/review', icon: <CheckCircleOutlined />, label: '审批评分' },
     { key: '/teacher/scores', icon: <BarChartOutlined />, label: '成绩总览' },
     { key: '/teacher/profile', icon: <IdcardOutlined />, label: '学生画像' },
   ];
+
+  const menuItems = isAdmin
+    ? [
+      baseMenuItems[0],
+      baseMenuItems[1],
+      { key: '/teacher/users', icon: <UserOutlined />, label: '用户管理' },
+      baseMenuItems[2],
+      baseMenuItems[3],
+      baseMenuItems[4],
+    ]
+    : baseMenuItems;
 
   return (
     <AppLayout
@@ -133,10 +144,10 @@ function TeacherLayout() {
         <Route path="tasks" element={<TeacherTasks />} />
         <Route path="classes" element={<ClassManagement />} />
         <Route path="class/:classId" element={<ClassDetail />} />
+        <Route path="users" element={<UserManagement />} />
         <Route path="review" element={<TeacherReview />} />
         <Route path="scores" element={<TeacherScores />} />
         <Route path="profile" element={<TeacherStudentProfile />} />
-        {/* 个人信息路由 */}
         <Route path="personal-info" element={<TeacherPersonalInfo />} />
         <Route path="*" element={<Navigate to="tasks" replace />} />
       </Routes>
@@ -177,19 +188,16 @@ export default function App() {
       <AntApp>
         <BrowserRouter>
           <Routes>
-            {/* 学生端 */}
             <Route path="/student/login" element={<StudentLoginWrapper />} />
             <Route path="/student/*" element={<StudentLayout />} />
 
-            {/* 教师端 */}
             <Route path="/teacher/login" element={<TeacherLoginWrapper />} />
             <Route path="/teacher/*" element={<TeacherLayout />} />
 
-            {/* 默认跳转 */}
             <Route path="*" element={<Navigate to="/student/login" replace />} />
           </Routes>
         </BrowserRouter>
       </AntApp>
     </ConfigProvider>
   );
-}
+} 
