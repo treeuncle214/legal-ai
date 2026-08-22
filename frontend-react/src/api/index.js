@@ -231,6 +231,26 @@ export const getTeachersForClass = () =>
 export const batchImportStudents = (formData) =>
     api.upload('/api/users/batch-import', formData);
 
+// ==================== 班级教师管理接口 ====================
+
+/**
+ * 获取班级教师列表
+ */
+export const getClassTeachers = (classId) =>
+    api.get(`/api/classes/${classId}/teachers`);
+
+/**
+ * 添加教师到班级
+ */
+export const addTeacherToClass = (classId, teacherUsername) =>
+    api.post(`/api/classes/${classId}/teachers`, null, { params: { teacher_username: teacherUsername } });
+
+/**
+ * 从班级移除教师
+ */
+export const removeTeacherFromClass = (classId, teacherUsername) =>
+    api.delete(`/api/classes/${classId}/teachers/${teacherUsername}`);
+
 // ==================== 修改密码接口 ====================
 
 export const changePassword = (oldPassword, newPassword) =>

@@ -4,6 +4,7 @@
 
 from backend.database.engine import SessionLocal
 from backend.database.models import Class, UserClass, User
+from backend.database.models.class_teacher import ClassTeacher
 from typing import List, Dict, Optional
 from sqlalchemy.orm import joinedload
 
@@ -41,16 +42,54 @@ def get_class(class_id: int) -> Optional[Dict]:
 
 
 def get_teacher_classes(teacher_id: int) -> List[Dict]:
-    """获取教师的所有班级"""
+    """获取教师的所有班级（自己创建的 + 被共享的）"""
     db = SessionLocal()
     try:
-        classes = db.query(Class).filter(Class.teacher_id == teacher_id).all()
+        # 查询自己创建和被共享的班级
+        classes = db.query(Class).outerjoin(
+            ClassTeacher, Class.id == ClassTeacher.class_id
+        ).filter(
+            (Class.teacher_id == teacher_id) | (ClassTeacher.teacher_id == teacher_id)
+        ).distinct().all()
+        
         result = []
         for cls in classes:
             student_count = db.query(UserClass).filter(UserClass.class_id == cls.id).count()
+            
+            # 获取班级所有教师
+            teacher_relations = db.query(ClassTeacher).filter(
+                ClassTeacher.class_id == cls.id
+            ).all()
+            
+            teachers = []
+            # 添加创建者
+            creator = db.query(User).filter(User.id == cls.teacher_id).first()
+            if creator:
+                teachers.append({
+                    "teacher_id": creator.id,
+                    "username": creator.username,
+                    "display_name": creator.display_name or creator.username,
+                    "is_creator": True
+                })
+            
+            # 添加共享教师
+            for ct in teacher_relations:
+                teacher = db.query(User).filter(User.id == ct.teacher_id).first()
+                if teacher and teacher.id != cls.teacher_id:
+                    teachers.append({
+                        "teacher_id": teacher.id,
+                        "username": teacher.username,
+                        "display_name": teacher.display_name or teacher.username,
+                        "is_creator": False
+                    })
+            
             data = cls.to_dict()
             data["student_count"] = student_count
+            data["teacher_count"] = len(teachers)
+            data["teachers"] = teachers
+            data["is_creator"] = cls.teacher_id == teacher_id
             result.append(data)
+        
         return result
     finally:
         db.close()

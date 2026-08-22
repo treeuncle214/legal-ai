@@ -92,6 +92,8 @@ def get_student_class_id(current_user: dict = Depends(get_current_student)) -> i
 def get_teacher_class_ids(current_user: dict = Depends(get_current_teacher)) -> List[int]:
     """
     获取当前教师负责的所有班级ID列表
+    - admin: 所有班级
+    - 普通教师: 自己创建的 + 被共享的班级
     """
     from sqlalchemy import text
     
@@ -101,8 +103,11 @@ def get_teacher_class_ids(current_user: dict = Depends(get_current_teacher)) -> 
             result = db.execute(text("SELECT id FROM classes"))
         else:
             result = db.execute(text("""
-                SELECT id FROM classes 
-                WHERE teacher_id = (SELECT id FROM users WHERE username = :username)
+                SELECT DISTINCT c.id 
+                FROM classes c
+                LEFT JOIN class_teachers ct ON c.id = ct.class_id
+                WHERE c.teacher_id = (SELECT id FROM users WHERE username = :username)
+                   OR ct.teacher_id = (SELECT id FROM users WHERE username = :username)
             """), {"username": current_user["username"]})
         
         rows = result.fetchall()

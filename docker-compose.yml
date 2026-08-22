@@ -20,7 +20,9 @@ services:
       - legal_ai_network
 
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
     container_name: legal_ai_backend
     volumes:
       - ./data/uploads:/app/data/uploads
@@ -47,12 +49,12 @@ services:
       - legal_ai_network
 
   nginx:
-    image: nginx:alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
     container_name: legal_ai_nginx
     volumes:
       - ./data/uploads:/usr/share/nginx/html/uploads
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./frontend-react/dist:/usr/share/nginx/html:ro
     ports:
       - "80:80"
     depends_on:

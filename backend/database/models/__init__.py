@@ -5,6 +5,7 @@
 
 from backend.database.models.base import create_submission_fields
 from backend.database.models.user import User, Class, UserClass
+from backend.database.models.class_teacher import ClassTeacher
 from backend.database.models.task import Task, Submission
 from backend.database.models.rubric import Rubric, RubricTemplate, RubricTemplateIndicator, TemplateShare
 from backend.database.models.task_rubric import TaskRubric, TaskRubricIndicator
@@ -16,6 +17,7 @@ __all__ = [
     "User",
     "Class",
     "UserClass",
+    "ClassTeacher",
     "Task",
     "Submission",
     "Rubric",

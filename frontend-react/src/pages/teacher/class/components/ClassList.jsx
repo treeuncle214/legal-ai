@@ -1,17 +1,16 @@
-// frontend-react/src/pages/teacher/class/components/ClassList.jsx
 import { Table, Button, Space, Popconfirm, Tag } from 'antd';
-import { UserOutlined, DeleteOutlined } from '@ant-design/icons';
+import { UserOutlined, DeleteOutlined, TeamOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 
-export function ClassList({ data, loading, onDelete }) {
+export function ClassList({ data, loading, onDelete, onManageTeachers }) {
     const navigate = useNavigate();
 
     const columns = [
-        { title: 'ID', dataIndex: 'id', width: 80 },
+        { title: 'ID', dataIndex: 'id', width: 60 },
         {
             title: '班级名称',
             dataIndex: 'name',
-            width: 200,
+            width: 180,
             render: (text, record) => (
                 <Button type="link" onClick={() => navigate(`/teacher/class/${record.id}`)}>
                     {text}
@@ -21,35 +20,34 @@ export function ClassList({ data, loading, onDelete }) {
         {
             title: '负责教师',
             dataIndex: 'teacher_name',
-            width: 120,
+            width: 100,
             render: (text) => text || '-',
+        },
+        {
+            title: '教师数',
+            dataIndex: 'teacher_count',
+            width: 80,
+            render: (count) => <Tag color="purple">{count || 1} 人</Tag>,
         },
         {
             title: '学生数',
             dataIndex: 'student_count',
-            width: 100,
+            width: 80,
             render: (count) => <Tag color="blue">{count} 人</Tag>,
         },
         {
-            title: '创建时间',
-            dataIndex: 'created_at',
-            width: 180,
-        },
-        {
             title: '操作',
-            width: 160,
+            width: 250,
             render: (_, record) => (
                 <Space>
-                    <Button
-                        type="link"
-                        icon={<UserOutlined />}
-                        onClick={() => navigate(`/teacher/class/${record.id}`)}
-                    >
-                        查看学生
+                    <Button type="link" icon={<UserOutlined />} onClick={() => navigate(`/teacher/class/${record.id}`)}>
+                        学生
+                    </Button>
+                    <Button type="link" icon={<TeamOutlined />} onClick={() => onManageTeachers?.(record)}>
+                        教师
                     </Button>
                     <Popconfirm
                         title={`确定删除班级 "${record.name}"？`}
-                        description="删除后班级中的所有学生关联将被移除，但学生账号仍保留。"
                         onConfirm={() => onDelete(record.id, record.name)}
                         okText="确定"
                         cancelText="取消"

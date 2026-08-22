@@ -24,10 +24,9 @@ class WordSubmissionRequest(BaseModel):
 
 class ReviewRequest(BaseModel):
     """审批请求"""
-    scores: Dict[str, float]  # {"ai_retrieval": 85, "critical": 78, ...}
+    scores: Optional[Dict[str, float]] = {}
     teacher_comment: str = ""
-    indicator_scores: Optional[Dict[str, float]] = {}  # ✅ 新增：修改后的指标分数
-
+    indicator_scores: Optional[Dict[str, float]] = {}
 
 class ScoreResult(BaseModel):
     """评分结果"""

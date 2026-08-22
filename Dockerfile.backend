@@ -2,12 +2,10 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# ========== 换国内源（加速 100 倍）==========
-# Debian 软件源换阿里云
+# ========== 换国内源 ==========
 RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
     sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
 
-# pip 换阿里云
 RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/
 
 # ========== 安装系统依赖 ==========
@@ -20,13 +18,23 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# ✅ 升级 openai 并安装 gunicorn
+RUN pip install --upgrade openai gunicorn
+
 # ========== 复制代码 ==========
 COPY backend/ ./backend/
 
 # ========== 创建数据目录 ==========
-RUN mkdir -p /app/data/uploads /app/data/exports /app/logs
+RUN mkdir -p /app/data/uploads /app/data/exports /app/data/temp /app/logs
 
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# ✅ 使用 Gunicorn + Uvicorn workers（4个worker进程，支持并发）
+CMD ["gunicorn", "backend.main:app", \
+     "--workers", "4", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--bind", "0.0.0.0:8000", \
+     "--timeout", "300", \
+     "--graceful-timeout", "30", \
+     "--keep-alive", "5"]

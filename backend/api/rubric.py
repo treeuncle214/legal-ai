@@ -143,23 +143,20 @@ async def delete_rubric_template(
     current_user: dict = Depends(get_current_teacher),
     db: Session = Depends(get_db)
 ):
-    """
-    删除评分模板
-    - 自己的模板：物理删除
-    - 别人共享的模板：只删除共享关系（不影响原模板）
-    """
+    """删除评分模板"""
     template = get_template(template_id)
     if not template:
         raise HTTPException(status_code=404, detail="模板不存在")
     
-    # ✅ 如果是自己的模板，物理删除
+    # 如果是自己的模板，物理删除
     if template["created_by"] == current_user["username"]:
-        delete_template(template_id)
+        success = delete_template(template_id)
+        if not success:
+            raise HTTPException(status_code=500, detail="模板删除失败，可能有关联数据")
         return Response(message="模板删除成功")
     
-    # ✅ 如果是别人共享的模板，只删除共享关系
+    # 如果是别人共享的模板，只删除共享关系
     if current_user["username"] in template.get("shared_with", []):
-        # 从 template_shares 表中删除当前用户的共享记录
         remove_template_share(template_id, current_user["username"])
         return Response(message="已从您的模板列表中移除")
     

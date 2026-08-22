@@ -14,7 +14,7 @@ from backend.schemas.task import TaskCreate, TaskUpdate, TaskResponse
 from backend.schemas.common import Response
 from backend.database.rubric import get_template, create_task_rubric_snapshot, update_task_rubric_task_id, get_task_rubric
 from backend.config import UPLOAD_DIR
-from backend.database.models import TaskRubric, TaskRubricIndicator
+from backend.database.models import Task, TaskRubric, TaskRubricIndicator
 from backend.database.tasks import get_all_tasks as get_tasks_db
 from backend.database.tasks import get_class_weight_sum
 
@@ -79,16 +79,13 @@ async def get_tasks(
                             print(f"获取班级 {cid} 任务失败: {e}")
                             continue
         
-        # 确保 tasks 是列表
         if tasks is None:
             tasks = []
         
-        # 补充 rubric_config 和模板信息
         for task in tasks:
             if not task:
                 continue
             
-            # ✅ 优先从任务快照获取评分配置
             try:
                 task_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task.get("id")).first()
                 if task_rubric:
@@ -108,12 +105,9 @@ async def get_tasks(
                         ]
                     }
                     task["rubric_config"] = rubric_config
-                    
-                    # ✅ 关键修改：template_indicators 使用快照数据，而不是原始模板
                     task["template_indicators"] = rubric_config["indicators"]
-                    task["template_name"] = None  # 从原始模板获取名称（仅用于显示）
+                    task["template_name"] = None
                     
-                    # 尝试获取模板名称（仅用于显示，不影响评分逻辑）
                     template_id = task.get("rubric_template_id")
                     if template_id:
                         template = get_template(template_id)
@@ -157,7 +151,6 @@ async def get_task_detail(
         if current_user["role"] != "admin" and task.get("class_id") not in teacher_class_ids:
             raise HTTPException(status_code=403, detail="无权查看此任务")
     
-    # ✅ 优先从任务快照获取评分配置
     task_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task_id).first()
     if task_rubric:
         indicators = db.query(TaskRubricIndicator).filter(
@@ -176,12 +169,9 @@ async def get_task_detail(
             ]
         }
         task["rubric_config"] = rubric_config
-        
-        # ✅ 关键修改：template_indicators 使用快照数据
         task["template_indicators"] = rubric_config["indicators"]
         task["template_name"] = None
         
-        # 尝试获取模板名称（仅用于显示）
         template_id = task.get("rubric_template_id")
         if template_id:
             template = get_template(template_id)
@@ -212,7 +202,6 @@ async def create_task(
 ):
     """发布新任务（教师专用），支持上传附件"""
     
-    # 验证 class_id
     if not class_id:
         raise HTTPException(status_code=400, detail="请选择所属班级")
     
@@ -220,7 +209,6 @@ async def create_task(
     if current_user["role"] != "admin" and class_id not in teacher_class_ids:
         raise HTTPException(status_code=403, detail="无权为其他班级创建任务")
     
-    # 检查权重是否超限
     weight_info = get_class_weight_sum(class_id)
     if weight_info["total_weight"] + weight > 100:
         raise HTTPException(
@@ -228,7 +216,6 @@ async def create_task(
             detail=f"权重超限！该班级已累计权重 {weight_info['total_weight']}%，加上本次 {weight}% 后总计 {weight_info['total_weight'] + weight}%，超过100%"
         )
     
-    # 获取模板信息
     rubric_template_id = int(rubric_template_id) if rubric_template_id else None
     if not rubric_template_id:
         raise HTTPException(status_code=400, detail="必须选择评分模板")
@@ -237,7 +224,6 @@ async def create_task(
     if not template:
         raise HTTPException(status_code=404, detail="评分模板不存在")
     
-    # 从模板提取指标列表
     indicators_from_template = []
     for ind in template.get("indicators", []):
         indicators_from_template.append({
@@ -247,7 +233,6 @@ async def create_task(
         })
     enabled_indicators_str = ",".join([ind["indicator_key"] for ind in indicators_from_template])
     
-    # 保存附件
     attachment_path = None
     attachment_filename = None
     if attachment:
@@ -261,7 +246,6 @@ async def create_task(
         attachment_path = unique_name
         attachment_filename = attachment.filename
     
-    # 创建任务
     task_id = add_task(
         title=title,
         description=description,
@@ -279,7 +263,6 @@ async def create_task(
         weight=weight
     )
     
-    # 创建评分配置快照
     rubric_id = create_task_rubric_snapshot(
         task_id=task_id,
         template_id=rubric_template_id,
@@ -351,9 +334,9 @@ async def edit_task(
     class_id: int = Form(None),
     max_submissions: int = Form(None),
     allow_after_deadline: int = Form(None),
-    rubric_template_id: int = Form(None),
+    rubric_template_id: str = Form(None),  # ✅ 改为 str 类型，避免 "null" 字符串转换错误
     weight: int = Form(None),
-    force_update_rubric: int = Form(0),  # ✅ 新增：是否强制更新评分配置
+    force_update_rubric: int = Form(0),
     attachment: UploadFile = File(None),
     current_user: dict = Depends(get_current_teacher),
     db: Session = Depends(get_db)
@@ -411,26 +394,25 @@ async def edit_task(
         update_data["attachment_path"] = unique_name
         update_data["attachment_filename"] = attachment.filename
     
-    # ✅ 处理评分模板变更（方案D）
-    new_rubric_template_id = int(rubric_template_id) if rubric_template_id else None
+    # ✅ 安全转换 rubric_template_id
+    try:
+        new_rubric_template_id = int(rubric_template_id) if rubric_template_id and rubric_template_id not in ["null", "undefined", "None", ""] else None
+    except (ValueError, TypeError):
+        new_rubric_template_id = None
+    
     old_rubric_template_id = task.get("rubric_template_id")
     force_update = force_update_rubric == 1
     
-    # 需要更新快照的条件：
-    # 1. 模板ID不同（选择了不同模板）
-    # 2. 模板ID相同但用户勾选了"强制更新"
     need_update_rubric = False
     
     if new_rubric_template_id is not None and new_rubric_template_id != old_rubric_template_id:
-        # 选择了不同的模板
         need_update_rubric = True
         print(f"🔄 检测到模板变更: {old_rubric_template_id} -> {new_rubric_template_id}")
     elif new_rubric_template_id is not None and new_rubric_template_id == old_rubric_template_id and force_update:
-        # 同一个模板但用户勾选了强制更新
         need_update_rubric = True
         print(f"🔄 用户勾选强制更新评分配置（模板ID不变: {new_rubric_template_id}）")
     
-    if need_update_rubric:
+    if need_update_rubric and new_rubric_template_id is not None:
         new_template = get_template(new_rubric_template_id)
         if not new_template:
             raise HTTPException(status_code=404, detail="评分模板不存在")
@@ -446,6 +428,11 @@ async def edit_task(
         enabled_indicators_str = ",".join([ind["indicator_key"] for ind in indicators_from_template])
         update_data["enabled_indicators"] = enabled_indicators_str
         update_data["rubric_template_id"] = new_rubric_template_id
+        
+        # ✅ 关键修复：先将 tasks.task_rubric_id 设为 NULL，解除外键引用
+        db.query(Task).filter(Task.id == task_id).update({"task_rubric_id": None})
+        db.commit()
+        print("✅ 已将 tasks.task_rubric_id 设为 NULL")
         
         # 删除旧快照
         old_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task_id).first()

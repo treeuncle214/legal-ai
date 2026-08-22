@@ -176,12 +176,30 @@ def delete_template(template_id: int) -> bool:
         template = db.query(RubricTemplate).filter(RubricTemplate.id == template_id).first()
         if not template:
             return False
+        
+        # 1. 删除模板指标
+        deleted_indicators = db.query(RubricTemplateIndicator).filter(
+            RubricTemplateIndicator.template_id == template_id
+        ).delete()
+        print(f"✅ 删除 {deleted_indicators} 个指标")
+        
+        # 2. 删除共享记录
+        deleted_shares = db.query(TemplateShare).filter(
+            TemplateShare.template_id == template_id
+        ).delete()
+        print(f"✅ 删除 {deleted_shares} 条共享记录")
+        
+        # 3. 删除主记录
         db.delete(template)
+        
         db.commit()
+        print(f"✅ 模板 {template_id} 删除成功")
         return True
     except Exception as e:
         db.rollback()
-        print(f"删除模板失败: {e}")
+        print(f"❌ 删除模板失败: {e}")
+        import traceback
+        traceback.print_exc()
         return False
     finally:
         db.close()

@@ -68,7 +68,7 @@ export function TaskFormModal({
     const [attachmentFileList, setAttachmentFileList] = useState([]);
     // 权重信息状态
     const [weightInfo, setWeightInfo] = useState(null);
-    // ✅ 是否强制更新评分配置
+    // 是否强制更新评分配置
     const [forceUpdateRubric, setForceUpdateRubric] = useState(false);
 
     // 监听表单中的班级和权重变化
@@ -79,7 +79,7 @@ export function TaskFormModal({
     // 当 Modal 打开时，填充表单
     useEffect(() => {
         if (open && editingTask) {
-            // ✅ 重置强制更新状态
+            // 重置强制更新状态
             setForceUpdateRubric(false);
 
             if (editingTask.has_attachment) {
@@ -141,17 +141,17 @@ export function TaskFormModal({
         }
     };
 
-    // ✅ 获取选中的模板（实时数据）
+    // 获取选中的模板（实时数据）
     const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
     const liveTemplateIndicators = selectedTemplate?.indicators || [];
     const liveTemplateOverallPrompt = selectedTemplate?.overall_prompt || '';
     const liveTemplateName = selectedTemplate?.name || '';
 
-    // ✅ 获取任务快照数据（编辑时用于对比）
+    // 获取任务快照数据（编辑时用于对比）
     const snapshotIndicators = editingTask?.rubric_config?.indicators || [];
     const snapshotOverallPrompt = editingTask?.rubric_config?.overall_prompt || '';
 
-    // ✅ 判断模板是否被修改过
+    // 判断模板是否被修改过
     const isTemplateModified = editingTask && selectedTemplate && (() => {
         if (snapshotIndicators.length !== liveTemplateIndicators.length) {
             return true;
@@ -171,7 +171,7 @@ export function TaskFormModal({
         return false;
     })();
 
-    // ✅ 始终显示实时模板数据
+    // 始终显示实时模板数据
     const displayIndicators = liveTemplateIndicators;
     const displayOverallPrompt = liveTemplateOverallPrompt;
     const displayTemplateName = liveTemplateName;
@@ -305,7 +305,7 @@ export function TaskFormModal({
         );
     };
 
-    // ✅ 渲染模板变更提示
+    // 渲染模板变更提示
     const renderTemplateChangeAlert = () => {
         if (!editingTask || !selectedTemplateId) return null;
 
@@ -367,12 +367,19 @@ export function TaskFormModal({
             formData.append('allow_after_deadline', values.allow_after_deadline || 0);
             formData.append('weight', values.weight || 5);
             formData.append('rubric_template_id', selectedTemplateId);
-
-            // ✅ 传递是否强制更新评分配置
             formData.append('force_update_rubric', forceUpdateRubric ? 1 : 0);
 
+            // ✅ 修复：只有真正的 File 对象才添加到 FormData
             if (attachmentFile) {
-                formData.append('attachment', attachmentFile);
+                // 用户新上传的文件（Upload 组件的 beforeUpload 返回 false 时设置）
+                if (attachmentFile.originFileObj && attachmentFile.originFileObj instanceof File) {
+                    formData.append('attachment', attachmentFile.originFileObj);
+                }
+                // 直接是 File 对象
+                else if (attachmentFile instanceof File) {
+                    formData.append('attachment', attachmentFile);
+                }
+                // 编辑任务时已有的附件（只有 url，没有实际文件），不添加到 FormData
             }
 
             onSubmit(formData);
@@ -483,10 +490,10 @@ export function TaskFormModal({
                     )}
                 </Form.Item>
 
-                {/* ✅ 编辑任务时的模板变更提示 */}
+                {/* 编辑任务时的模板变更提示 */}
                 {editingTask && renderTemplateChangeAlert()}
 
-                {/* ✅ 编辑任务时的强制更新复选框 */}
+                {/* 编辑任务时的强制更新复选框 */}
                 {editingTask && (
                     <div style={{
                         marginBottom: 12,

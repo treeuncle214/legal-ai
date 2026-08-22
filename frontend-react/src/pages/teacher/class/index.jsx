@@ -5,6 +5,7 @@ import { useClassManagement } from './hooks/useClassManagement';
 import { ClassList } from './components/ClassList';
 import { CreateClassModal } from './components/CreateClassModal';
 import { ImportStudentsModal } from './components/ImportStudentsModal';
+import { ClassTeacherModal } from './components/ClassTeacherModal';
 
 export default function ClassManagement() {
     const {
@@ -19,6 +20,8 @@ export default function ClassManagement() {
 
     const [createClassOpen, setCreateClassOpen] = useState(false);
     const [importOpen, setImportOpen] = useState(false);
+    const [teacherModalOpen, setTeacherModalOpen] = useState(false);
+    const [selectedClass, setSelectedClass] = useState(null);
     const [createLoading, setCreateLoading] = useState(false);
     const [importLoading, setImportLoading] = useState(false);
 
@@ -42,6 +45,11 @@ export default function ClassManagement() {
         }
     };
 
+    const handleManageTeachers = (classInfo) => {
+        setSelectedClass(classInfo);
+        setTeacherModalOpen(true);
+    };
+
     return (
         <>
             <div style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -53,9 +61,13 @@ export default function ClassManagement() {
                 </Button>
             </div>
 
-            <ClassList data={classes} loading={loading} onDelete={handleDeleteClass} />
+            <ClassList
+                data={classes}
+                loading={loading}
+                onDelete={handleDeleteClass}
+                onManageTeachers={handleManageTeachers}
+            />
 
-            {/* 创建班级弹窗 */}
             <CreateClassModal
                 open={createClassOpen}
                 onCancel={() => setCreateClassOpen(false)}
@@ -65,7 +77,6 @@ export default function ClassManagement() {
                 teachers={allTeachers}
             />
 
-            {/* 批量导入弹窗 */}
             <ImportStudentsModal
                 open={importOpen}
                 onCancel={() => setImportOpen(false)}
@@ -73,6 +84,16 @@ export default function ClassManagement() {
                 loading={importLoading}
                 classes={classes}
                 isAdmin={isAdmin}
+            />
+
+            <ClassTeacherModal
+                open={teacherModalOpen}
+                classInfo={selectedClass}
+                onCancel={() => setTeacherModalOpen(false)}
+                onSuccess={() => {
+                    // 刷新班级列表
+                    window.location.reload();
+                }}
             />
         </>
     );

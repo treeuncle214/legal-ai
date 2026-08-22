@@ -104,16 +104,20 @@ async def review_submission_api(
     if task and task.get("class_id") not in teacher_class_ids:
         raise HTTPException(status_code=403, detail="无权审批此提交")
 
+    # ✅ 安全处理可能为 None 的字段
+    scores_dict = review_data.scores or {}
+    teacher_comment = review_data.teacher_comment or ""
+    indicator_scores = review_data.indicator_scores or {}
+
     review_submission(
         submission_id=submission_id,
         teacher_username=current_user["username"],
-        scores_dict=review_data.scores,
-        teacher_comment=review_data.teacher_comment,
-        indicator_scores=review_data.indicator_scores
+        scores_dict=scores_dict,
+        teacher_comment=teacher_comment,
+        indicator_scores=indicator_scores
     )
 
     return Response(message="审批完成，评分已更新")
-
 
 @router.post("/review/publish/{submission_id}", response_model=Response)
 async def publish_score(
