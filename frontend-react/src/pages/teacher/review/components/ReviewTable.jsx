@@ -1,11 +1,13 @@
-import { Table, Button, Space, Tag } from 'antd';
-import { FileWordOutlined } from '@ant-design/icons';
+// ==================== ReviewTable.jsx ====================
+import { Table, Button, Space, Tag, Popconfirm } from 'antd';
+import { FileWordOutlined, ReloadOutlined } from '@ant-design/icons';
 
 export const ReviewTable = ({
     submissions,
     loading,
     onReview,
     onPublish,
+    onReScore,  // ✅ 新增
     onOpenWord,
 }) => {
     const getStatus = (record) => {
@@ -15,7 +17,6 @@ export const ReviewTable = ({
         if (record.is_reviewed === 1) {
             return <Tag color="orange">已批改，未发布</Tag>;
         }
-        // 检查AI评分状态
         if (record.ai_scored) {
             return <Tag color="blue">已AI评分，待审批</Tag>;
         }
@@ -45,7 +46,7 @@ export const ReviewTable = ({
         {
             title: '查看原文档',
             dataIndex: 'word_file_path',
-            width: 180,
+            width: 160,
             render: (filePath, record) => {
                 if (record.submit_type === 'word' && filePath) {
                     const files = filePath.split(',').map(f => f.trim()).filter(f => f);
@@ -69,25 +70,47 @@ export const ReviewTable = ({
                 return <Tag color="green">文本框</Tag>;
             },
         },
-        // ✅ 已移除「AI评分」列
         {
             title: '状态',
-            width: 150,
+            width: 140,
             render: (_, record) => getStatus(record),
         },
         {
             title: '操作',
-            width: 220,
+            width: 240,
             render: (_, record) => {
-                // 评分中或未评分 → 不可操作
+                // AI评分失败 → 显示重新评分和手动审批按钮
+                if (record.ai_score_status === 'failed' && record.is_reviewed === 0) {
+                    return (
+                        <Space>
+                            <Popconfirm
+                                title="确定重新AI评分？"
+                                onConfirm={() => onReScore?.(record.id)}
+                                okText="确定"
+                                cancelText="取消"
+                            >
+                                <Button size="small" icon={<ReloadOutlined />}>
+                                    重新评分
+                                </Button>
+                            </Popconfirm>
+                            <Button type="primary" size="small" onClick={() => onReview(record)}>
+                                手动评分
+                            </Button>
+                        </Space>
+                    );
+                }
+
+                // 评分中
                 if (record.ai_score_status === 'scoring') {
                     return <Button size="small" disabled>评分中...</Button>;
                 }
+
+                // 未评分
                 if (!record.ai_scored && record.ai_score_status !== 'completed') {
                     return <Button size="small" disabled>等待AI评分</Button>;
                 }
 
-                // 已AI评分，待审批
+                // 已AI评分待审批
                 if (record.is_reviewed === 0 && record.ai_scored) {
                     return (
                         <Button type="primary" size="small" onClick={() => onReview(record)}>
@@ -96,7 +119,7 @@ export const ReviewTable = ({
                     );
                 }
 
-                // 已审批，未发布
+                // 已审批未发布
                 if (record.is_reviewed === 1 && record.score_published === 0) {
                     return (
                         <Space>
@@ -109,9 +132,7 @@ export const ReviewTable = ({
                 }
 
                 // 已发布
-                return (
-                    <Button size="small" onClick={() => onReview(record)}>查看</Button>
-                );
+                return <Button size="small" onClick={() => onReview(record)}>查看</Button>;
             },
         },
     ];

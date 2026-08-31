@@ -1,3 +1,4 @@
+// ==================== review/index.jsx ====================
 import { useReview } from './hooks/useReview';
 import { ReviewToolbar } from './components/ReviewToolbar';
 import { ReviewTable } from './components/ReviewTable';
@@ -10,13 +11,15 @@ import { ThunderboltOutlined } from '@ant-design/icons';
 export default function TeacherReview() {
     const {
         tasks,
+        classes,
         selectedTaskId,
         setSelectedTaskId,
+        selectedClassId,
+        setSelectedClassId,
         submissions,
         dimensions,
         loading,
         publishing,
-        tasksLoaded,
         fetchSubmissions,
         handleReviewSubmit,
         handlePublish,
@@ -38,13 +41,17 @@ export default function TeacherReview() {
     const handleModalClose = () => {
         setModalVisible(false);
         setCurrentSubmission(null);
-        fetchSubmissions(selectedTaskId);
+        if (selectedTaskId) {
+            fetchSubmissions(selectedTaskId);
+        }
     };
 
     const handleBatchScoreSuccess = () => {
         setBatchModalVisible(false);
         message.success('批量AI评分已启动');
-        fetchSubmissions(selectedTaskId);
+        if (selectedTaskId) {
+            fetchSubmissions(selectedTaskId);
+        }
     };
 
     const getPendingCount = () => {
@@ -58,16 +65,18 @@ export default function TeacherReview() {
 
     return (
         <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
                 <ReviewToolbar
                     tasks={tasks}
+                    classes={classes}
                     selectedTaskId={selectedTaskId}
                     setSelectedTaskId={setSelectedTaskId}
+                    selectedClassId={selectedClassId}
+                    setSelectedClassId={setSelectedClassId}
                     submissions={submissions}
-                    tasksLoaded={tasksLoaded}
                     loading={loading}
                     publishing={publishing}
-                    onRefresh={() => fetchSubmissions(selectedTaskId)}
+                    onRefresh={() => selectedTaskId && fetchSubmissions(selectedTaskId)}
                     onBatchPublish={handleBatchPublish}
                 />
                 {selectedTaskId && (
@@ -87,6 +96,7 @@ export default function TeacherReview() {
                 loading={loading}
                 onReview={handleReview}
                 onPublish={handlePublish}
+                onReScore={handleReScore}  // ✅ 传递重新评分
                 onOpenWord={openWordDocument}
             />
 

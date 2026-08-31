@@ -3,10 +3,11 @@
 """
 
 import logging
+import traceback  # ✅ 新增导入
 from typing import Dict, List, Optional
 from sqlalchemy import desc, func
 from backend.database.engine import SessionLocal
-from backend.database.models import Submission, SubmissionScore, Task,User, Class, UserClass
+from backend.database.models import Submission, SubmissionScore, Task, User, Class, UserClass
 from backend.config import SCORING_DIMENSIONS, get_dimension_name
 
 logger = logging.getLogger(__name__)
@@ -25,9 +26,12 @@ def get_dimension_scores_history(student_username):
         for sub in submissions:
             for dim in SCORING_DIMENSIONS:
                 key = dim["key"]
-                score = sub.get_dimension_score(key)
-                if score is not None and score > 0:
-                    result[key].append(score)
+                # ✅ 优先使用 final_score
+                final_score = getattr(sub, f"final_score_{key}", None)
+                ai_score = getattr(sub, f"score_{key}", 0)
+                score = final_score if final_score and float(final_score) > 0 else ai_score
+                if score and float(score) > 0:
+                    result[key].append(float(score))
         
         return result
     except Exception as e:
@@ -36,19 +40,15 @@ def get_dimension_scores_history(student_username):
     finally:
         db.close()
 
+
 def calculate_profile(student_username: str) -> Dict:
-    """
-    计算学生能力画像
-    ✅ 改为直接平均分（不区分作业类型，不除以权重）
-    """
+    """计算学生能力画像（使用数据库中的百分制得分）"""
     db = SessionLocal()
     try:
-        # ✅ 获取用户信息（含学院、专业）
         user = db.query(User).filter(User.username == student_username).first()
         if not user:
             return None
         
-        # ✅ 获取班级信息
         class_info = db.query(UserClass).filter(UserClass.user_id == user.id).first()
         class_name = None
         class_id = None
@@ -58,7 +58,6 @@ def calculate_profile(student_username: str) -> Dict:
                 class_name = cls.name
                 class_id = cls.id
         
-        # 1. 获取所有已发布的提交
         submissions = db.query(Submission).filter(
             Submission.student_username == student_username,
             Submission.score_published == 1,
@@ -86,20 +85,19 @@ def calculate_profile(student_username: str) -> Dict:
                 "dimensions": {}
             }
         
-        # 2. 获取每个提交的指标得分
+        # 获取指标得分
         submission_ids = [s.id for s in submissions]
         indicator_scores = db.query(SubmissionScore).filter(
             SubmissionScore.submission_id.in_(submission_ids)
         ).all()
         
-        # 按提交分组
         scores_by_submission = {}
         for score in indicator_scores:
             if score.submission_id not in scores_by_submission:
                 scores_by_submission[score.submission_id] = {}
             scores_by_submission[score.submission_id][score.indicator_key] = score.score
         
-        # 3. 统计任务类型（仅用于展示）
+        # 统计任务类型
         task_type_count = {"课堂练习": 0, "任务实践": 0, "综合考察": 0}
         for sub in submissions:
             task = db.query(Task).filter(Task.id == sub.task_id).first()
@@ -107,54 +105,34 @@ def calculate_profile(student_username: str) -> Dict:
             if task_type in task_type_count:
                 task_type_count[task_type] += 1
         
-        # 4. ✅ 计算每个维度的平均分（直接平均，不区分类型）
-        dim_all_scores = {}
-        for dim in SCORING_DIMENSIONS:
-            key = dim["key"]
-            dim_all_scores[key] = []
+        # ✅ 关键修复：使用数据库中的 final_score_*（百分制）
+        dim_all_scores = {dim["key"]: [] for dim in SCORING_DIMENSIONS}
         
         for sub in submissions:
             for dim in SCORING_DIMENSIONS:
                 key = dim["key"]
-                sub_indicators = dim.get("sub_indicators", [])
-                if sub_indicators:
-                    total_score = 0
-                    total_max = 0
-                    for ind in sub_indicators:
-                        ind_key = ind["key"]
-                        max_score = 10
-                        total_max += max_score
-                        total_score += scores_by_submission.get(sub.id, {}).get(ind_key, 0)
-                    if total_max > 0:
-                        dim_score = total_score / total_max * 100
-                        if dim_score > 0:
-                            dim_all_scores[key].append(dim_score)
+                final_score = getattr(sub, f"final_score_{key}", None)
+                ai_score = getattr(sub, f"score_{key}", 0)
+                
+                if final_score is not None and float(final_score) > 0:
+                    dim_all_scores[key].append(float(final_score))
+                elif ai_score and float(ai_score) > 0:
+                    dim_all_scores[key].append(float(ai_score))
         
-        # 直接平均
+        # 计算平均分
         dim_avg = {}
         for dim in SCORING_DIMENSIONS:
             key = dim["key"]
             scores = dim_all_scores.get(key, [])
             dim_avg[key] = round(sum(scores) / len(scores), 2) if scores else 0
         
-        # 5. ✅ 计算每个提交的总成绩（作业总分 = 指标直接相加，满分100分）
-        submission_overall_scores = []
-        for sub in submissions:
-            total = 0
-            for dim in SCORING_DIMENSIONS:
-                sub_indicators = dim.get("sub_indicators", [])
-                for ind in sub_indicators:
-                    ind_key = ind["key"]
-                    total += scores_by_submission.get(sub.id, {}).get(ind_key, 0)
-            if total > 0:
-                submission_overall_scores.append(round(total, 2))
+        # ✅ 使用 sub.total_score（百分制）
+        submission_scores = [sub.total_score for sub in submissions if sub.total_score and sub.total_score > 0]
+        overall = round(sum(submission_scores) / len(submission_scores), 2) if submission_scores else 0
         
-        overall = round(sum(submission_overall_scores) / len(submission_overall_scores), 2) if submission_overall_scores else 0
-        
-        # 6. 计算综合等级
         overall_level = get_level(overall)
         
-        # 7. 构建各维度详情
+        # 构建各维度详情
         dimensions = {}
         for dim in SCORING_DIMENSIONS:
             key = dim["key"]
@@ -163,28 +141,24 @@ def calculate_profile(student_username: str) -> Dict:
             status = "evaluated" if score > 0 else "pending"
             
             indicator_scores_detail = {}
-            for sub in submissions:
-                for ind in dim.get("sub_indicators", []):
-                    ind_key = ind["key"]
-                    if ind_key not in indicator_scores_detail:
-                        indicator_scores_detail[ind_key] = []
-                    score_val = scores_by_submission.get(sub.id, {}).get(ind_key, 0)
+            for ind in dim.get("sub_indicators", []):
+                ind_key = ind["key"]
+                scores_list = []
+                for sub_id, scores in scores_by_submission.items():
+                    score_val = scores.get(ind_key, 0)
                     if score_val > 0:
-                        indicator_scores_detail[ind_key].append(score_val)
-            
-            indicator_avg = {}
-            for ind_key, scores_list in indicator_scores_detail.items():
+                        scores_list.append(score_val)
+                
                 if scores_list:
-                    indicator_avg[ind_key] = round(sum(scores_list) / len(scores_list), 2)
+                    indicator_scores_detail[ind_key] = round(sum(scores_list) / len(scores_list), 2)
             
             dimensions[key] = {
                 "score": score,
                 "level": level,
                 "status": status,
-                "indicator_scores": indicator_avg
+                "indicator_scores": indicator_scores_detail
             }
         
-        # ✅ 返回包含用户信息的完整数据
         return {
             "username": user.username,
             "display_name": user.display_name or user.username,
@@ -204,10 +178,8 @@ def calculate_profile(student_username: str) -> Dict:
             "final_count": task_type_count.get("综合考察", 0),
             "dimensions": dimensions
         }
-        
     except Exception as e:
         logger.error(f"计算能力画像失败: {e}")
-        import traceback
         traceback.print_exc()
         return {
             "ai_retrieval": 0,
@@ -225,6 +197,7 @@ def calculate_profile(student_username: str) -> Dict:
     finally:
         db.close()
 
+
 def get_level(score: float) -> str:
     """根据得分获取等级"""
     if score >= 85:
@@ -238,9 +211,7 @@ def get_level(score: float) -> str:
 
 
 def get_student_profile(student_username: str):
-    """
-    获取学生能力画像数据（兼容旧版调用方式）
-    """
+    """获取学生能力画像数据（兼容旧版）"""
     profile = calculate_profile(student_username)
     
     if profile.get("total_submissions", 0) > 0 or profile.get("overall", 0) > 0:

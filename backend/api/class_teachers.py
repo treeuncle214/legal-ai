@@ -14,6 +14,16 @@ from backend.schemas.common import Response
 router = APIRouter(prefix="/api", tags=["班级教师管理"])
 
 
+def get_creator_username(teacher_id: int) -> str:
+    """获取创建者用户名"""
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == teacher_id).first()
+        return user.username if user else ""
+    finally:
+        db.close()
+
+
 @router.get("/classes/{class_id}/teachers", response_model=Response)
 async def get_class_teachers(
     class_id: int,
@@ -21,19 +31,16 @@ async def get_class_teachers(
     db: Session = Depends(get_db)
 ):
     """获取班级的教师列表"""
-    # 检查权限
     teacher_class_ids = get_teacher_class_ids(current_user)
-    if class_id not in teacher_class_ids:
+    if current_user.get("username") != "admin" and class_id not in teacher_class_ids:
         raise HTTPException(status_code=403, detail="无权查看此班级")
     
     class_info = get_class(class_id)
     if not class_info:
         raise HTTPException(status_code=404, detail="班级不存在")
     
-    # 获取创建者
     creator = db.query(User).filter(User.id == class_info["teacher_id"]).first()
     
-    # 获取共享教师
     class_teachers = db.query(ClassTeacher).filter(
         ClassTeacher.class_id == class_id
     ).all()
@@ -76,14 +83,13 @@ async def add_teacher_to_class(
     if not class_info:
         raise HTTPException(status_code=404, detail="班级不存在")
     
-    # 检查权限：只有创建者或admin可以添加教师
     is_admin = current_user.get("username") == "admin"
-    is_creator = current_user.get("id") == class_info["teacher_id"] or current_user.get("username") == get_creator_username(class_info["teacher_id"])
+    creator_username = get_creator_username(class_info["teacher_id"])
+    is_creator = current_user.get("username") == creator_username
     
     if not is_admin and not is_creator:
         raise HTTPException(status_code=403, detail="只有班级创建者或管理员可以添加教师")
     
-    # 查找目标教师
     target_teacher = db.query(User).filter(
         User.username == teacher_username,
         User.role == "teacher"
@@ -92,7 +98,6 @@ async def add_teacher_to_class(
     if not target_teacher:
         raise HTTPException(status_code=404, detail="教师账号不存在")
     
-    # 检查是否已添加
     existing = db.query(ClassTeacher).filter(
         ClassTeacher.class_id == class_id,
         ClassTeacher.teacher_id == target_teacher.id
@@ -101,7 +106,6 @@ async def add_teacher_to_class(
     if existing:
         raise HTTPException(status_code=400, detail="该教师已在此班级中")
     
-    # 添加
     class_teacher = ClassTeacher(
         class_id=class_id,
         teacher_id=target_teacher.id,
@@ -125,23 +129,20 @@ async def remove_teacher_from_class(
     if not class_info:
         raise HTTPException(status_code=404, detail="班级不存在")
     
-    # 检查权限
     is_admin = current_user.get("username") == "admin"
-    is_creator = current_user.get("username") == get_creator_username(class_info["teacher_id"])
+    creator_username = get_creator_username(class_info["teacher_id"])
+    is_creator = current_user.get("username") == creator_username
     
     if not is_admin and not is_creator:
         raise HTTPException(status_code=403, detail="只有班级创建者或管理员可以移除教师")
     
-    # 查找目标教师
     target_teacher = db.query(User).filter(User.username == teacher_username).first()
     if not target_teacher:
         raise HTTPException(status_code=404, detail="教师不存在")
     
-    # 不能移除班级创建者
     if target_teacher.id == class_info["teacher_id"]:
         raise HTTPException(status_code=400, detail="不能移除班级创建者")
     
-    # 删除关联
     deleted = db.query(ClassTeacher).filter(
         ClassTeacher.class_id == class_id,
         ClassTeacher.teacher_id == target_teacher.id
@@ -152,13 +153,3 @@ async def remove_teacher_from_class(
         raise HTTPException(status_code=404, detail="该教师不在班级中")
     
     return Response(message=f"教师 {teacher_username} 已从班级移除")
-
-
-def get_creator_username(teacher_id: int) -> str:
-    """获取创建者用户名"""
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.id == teacher_id).first()
-        return user.username if user else ""
-    finally:
-        db.close()

@@ -1,7 +1,7 @@
 // frontend-react/src/pages/teacher/tasks/hooks/useTemplates.js
 import { useState, useEffect } from 'react';
 import { message } from 'antd';
-import { getTemplates, createTemplate, updateTemplate, deleteTemplate, shareTemplate, getTeachers } from '@/api';  // ✅
+import { getTemplates, createTemplate, updateTemplate, deleteTemplate, shareTemplate, unshareTemplate,getTeachers } from '@/api';  // ✅
 
 export function useTemplates() {
     const [templates, setTemplates] = useState([]);
@@ -36,6 +36,11 @@ export function useTemplates() {
         return result;
     };
 
+    const unshareTemplateWrapper = async (templateId, teacherUsername) => {
+        await unshareTemplate(templateId, teacherUsername);
+        await fetchTemplates();
+    };
+
     const updateTemplateWrapper = async (id, data) => {
         await updateTemplate(id, data);
         await fetchTemplates();
@@ -63,6 +68,7 @@ export function useTemplates() {
         fetchTemplates,
         createTemplate: createTemplateWrapper,
         updateTemplate: updateTemplateWrapper,
+        unshareTemplate: unshareTemplateWrapper,
         deleteTemplate: deleteTemplateWrapper,
         shareTemplate: shareTemplateWrapper,
     };

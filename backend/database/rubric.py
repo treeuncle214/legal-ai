@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from backend.database.engine import SessionLocal
 from backend.database.models import (
     RubricTemplate, RubricTemplateIndicator, TemplateShare,
-    TaskRubric, TaskRubricIndicator
+    TaskRubric, TaskRubricIndicator,Task
 )
 from typing import List, Dict, Optional
 from datetime import datetime
@@ -107,7 +107,14 @@ def get_templates_by_teacher(
                 RubricTemplateIndicator.template_id == t.id
             ).order_by(RubricTemplateIndicator.sort_order).all()
             t_dict["indicators"] = [i.to_dict() for i in indicators]
-            t_dict["is_shared"] = False  # 自己的模板
+            t_dict["is_shared"] = False
+            
+            # ✅ 关键修复：添加 shared_with 字段（已共享给哪些教师）
+            shares = db.query(TemplateShare).filter(
+                TemplateShare.template_id == t.id
+            ).all()
+            t_dict["shared_with"] = [s.shared_with for s in shares]
+            
             result.append(t_dict)
 
         # 2. 共享给自己的模板
@@ -177,21 +184,38 @@ def delete_template(template_id: int) -> bool:
         if not template:
             return False
         
-        # 1. 删除模板指标
-        deleted_indicators = db.query(RubricTemplateIndicator).filter(
+        # 1. 检查是否有任务使用了此模板的快照
+        task_rubrics = db.query(TaskRubric).filter(
+            TaskRubric.template_id == template_id
+        ).all()
+        
+        for tr in task_rubrics:
+            # 解除任务对快照的引用
+            db.query(Task).filter(Task.task_rubric_id == tr.id).update({"task_rubric_id": None})
+            # 删除快照指标
+            db.query(TaskRubricIndicator).filter(
+                TaskRubricIndicator.task_rubric_id == tr.id
+            ).delete()
+            # 删除快照
+            db.delete(tr)
+        db.commit()
+        print(f"✅ 处理了 {len(task_rubrics)} 个任务快照")
+        
+        # 2. 删除模板指标
+        db.query(RubricTemplateIndicator).filter(
             RubricTemplateIndicator.template_id == template_id
         ).delete()
-        print(f"✅ 删除 {deleted_indicators} 个指标")
         
-        # 2. 删除共享记录
-        deleted_shares = db.query(TemplateShare).filter(
+        # 3. 删除共享记录
+        db.query(TemplateShare).filter(
             TemplateShare.template_id == template_id
         ).delete()
-        print(f"✅ 删除 {deleted_shares} 条共享记录")
         
-        # 3. 删除主记录
+        # 4. 解除任务对模板的引用
+        db.query(Task).filter(Task.rubric_template_id == template_id).update({"rubric_template_id": None})
+        
+        # 5. 删除主记录
         db.delete(template)
-        
         db.commit()
         print(f"✅ 模板 {template_id} 删除成功")
         return True
@@ -257,13 +281,22 @@ def share_template_with_teacher(template_id: int, teacher_username: str) -> bool
     """将模板共享给某教师"""
     db = SessionLocal()
     try:
-        # 1. 先验证模板是否存在
         template = db.query(RubricTemplate).filter(RubricTemplate.id == template_id).first()
         if not template:
             print(f"❌ 模板 {template_id} 不存在")
             return False
         
-        # 2. 检查是否已经共享
+        # ✅ 新增：验证目标教师是否存在
+        from backend.database.models import User
+        target_teacher = db.query(User).filter(
+            User.username == teacher_username,
+            User.role == "teacher"
+        ).first()
+        if not target_teacher:
+            print(f"❌ 教师 {teacher_username} 不存在")
+            return False
+        
+        # 检查是否已共享
         existing = db.query(TemplateShare).filter(
             TemplateShare.template_id == template_id,
             TemplateShare.shared_with == teacher_username
@@ -272,12 +305,11 @@ def share_template_with_teacher(template_id: int, teacher_username: str) -> bool
             print(f"⚠️ 模板 {template_id} 已共享给 {teacher_username}")
             return False
         
-        # 3. 如果是自己，不允许共享给自己
+        # 不能共享给自己
         if template.created_by == teacher_username:
             print(f"❌ 不能共享给自己")
             return False
         
-        # 4. 执行共享
         share = TemplateShare(template_id=template_id, shared_with=teacher_username)
         db.add(share)
         db.commit()
@@ -285,7 +317,7 @@ def share_template_with_teacher(template_id: int, teacher_username: str) -> bool
         return True
     except Exception as e:
         db.rollback()
-        print(f"❌ 共享模板失败: {e}")
+        print(f"共享失败: {e}")
         return False
     finally:
         db.close()

@@ -24,21 +24,24 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
         logger.info(f"开始为提交 {submission_id} 进行AI评分，触发人: {teacher_username or '系统'}")
         update_ai_score_status(submission_id, "scoring")
         
+        # ✅ 关键修复：总是从数据库重新获取完整的任务信息
+        task_id = task_dict.get("id") if task_dict else None
+        if task_id:
+            fresh_task = get_task(task_id)
+            if fresh_task:
+                task_dict = fresh_task
+                logger.info(f"✅ 已获取任务 {task_id} 完整信息")
+                if task_dict.get("rubric_config"):
+                    logger.info(f"   rubric_config 指标数: {len(task_dict['rubric_config'].get('indicators', []))}")
+                else:
+                    logger.warning("⚠️ rubric_config 为 None，scorer.py 将使用默认配置")
+        
         # 从数据库获取完整的提交信息
         submission = get_submission(submission_id)
         if not submission:
             logger.error(f"提交 {submission_id} 不存在")
             update_ai_score_status(submission_id, "failed", error_message="提交记录不存在")
             return
-        
-        # ✅ 确保 task_dict 包含完整的任务信息
-        if not task_dict.get("description"):
-            # 如果 task_dict 中缺少 description，从数据库重新获取
-            full_task = get_task(task_dict.get("id"))
-            if full_task:
-                task_dict["description"] = full_task.get("description", "")
-                task_dict["custom_prompt"] = full_task.get("custom_prompt", "")
-                logger.info(f"✅ 从数据库补充任务描述: {task_dict['description'][:50]}...")
         
         # 构建完整的评分数据
         score_data = {
@@ -56,7 +59,7 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
         if "indicator_max_scores" not in score_result or not score_result["indicator_max_scores"]:
             db_temp = SessionLocal()
             try:
-                task_rubric = db_temp.query(TaskRubric).filter(TaskRubric.task_id == task_dict.get("id")).first()
+                task_rubric = db_temp.query(TaskRubric).filter(TaskRubric.task_id == task_id).first()
                 if task_rubric:
                     indicators = db_temp.query(TaskRubricIndicator).filter(
                         TaskRubricIndicator.task_rubric_id == task_rubric.id
@@ -91,7 +94,7 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
             indicator_max_scores = score_result.get("indicator_max_scores", {})
             
             if not indicator_max_scores:
-                task_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task_dict.get("id")).first()
+                task_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task_id).first()
                 if task_rubric:
                     indicators = db.query(TaskRubricIndicator).filter(
                         TaskRubricIndicator.task_rubric_id == task_rubric.id
@@ -139,7 +142,7 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
             
             db = SessionLocal()
             try:
-                task_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task_dict.get("id")).first()
+                task_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task_id).first()
                 if task_rubric:
                     teacher_prompt = task_rubric.overall_prompt
                     

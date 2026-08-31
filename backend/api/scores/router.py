@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 import logging
 import io
 from datetime import datetime
@@ -63,22 +64,6 @@ async def export_class_scores(
     """
     导出全班成绩 Excel（只包含两个 Sheet：任务总览、各任务汇总）
     """
-    # ========== 调试日志 ==========
-    print("=" * 70)
-    print("📊 导出班级成绩 - 调试信息")
-    print("-" * 70)
-    print(f"  当前用户: {current_user}")
-    print(f"  用户角色: {current_user.get('role')}")
-    print(f"  用户名: {current_user.get('username')}")
-    print(f"  请求班级ID: {class_id}")
-    
-    # 获取教师班级列表
-    teacher_class_ids = get_teacher_class_ids(current_user)
-    print(f"  教师班级ID列表: {teacher_class_ids}")
-    print(f"  班级ID是否在列表中: {class_id in teacher_class_ids}")
-    print("=" * 70)
-    # =================================
-    
     if not OPENPYXL_AVAILABLE:
         raise HTTPException(status_code=500, detail="openpyxl 未安装，请运行 pip install openpyxl")
     
@@ -93,13 +78,13 @@ async def export_class_scores(
         teacher_class_ids = get_teacher_class_ids(current_user)
         if class_id not in teacher_class_ids:
             raise HTTPException(
-                status_code=403, 
+                status_code=403,
                 detail=f"无权导出此班级数据。您的班级: {teacher_class_ids}，请求班级: {class_id}"
             )
     
     students = get_class_students(class_id)
     
-    # ✅ 为每个学生补充学院和专业信息
+    # 为每个学生补充学院和专业信息
     for student in students:
         user = db.query(User).filter(User.username == student["username"]).first()
         if user:
@@ -127,11 +112,21 @@ async def export_class_scores(
     task_info = {}
     
     for task in tasks:
-        submissions = db.query(Submission).filter(
+        # ✅ 关键修复：获取每个学生该任务的最新提交（而不是所有提交）
+        subquery = db.query(
+            Submission.student_username,
+            func.max(Submission.id).label("max_id")
+        ).filter(
             Submission.task_id == task.id,
             Submission.student_username.in_(student_usernames),
             Submission.score_published == 1,
             Submission.is_reviewed == 1
+        ).group_by(Submission.student_username).subquery()
+        
+        # 获取最新提交记录
+        submissions = db.query(Submission).join(
+            subquery,
+            Submission.id == subquery.c.max_id
         ).all()
         
         task_info[task.id] = {
@@ -150,29 +145,24 @@ async def export_class_scores(
             indicator_dict = {s.indicator_key: s.score for s in indicator_scores}
             max_scores = get_all_indicator_max_scores(task.id, db)
             
+            # ✅ 关键修复：优先使用 final_score（教师审批后的百分制得分）
+            # 否则使用 score_*（AI原始百分制得分）
             dimension_scores = {}
             for dim in SCORING_DIMENSIONS:
                 key = dim["key"]
-                sub_indicators = dim.get("sub_indicators", [])
-                if sub_indicators:
-                    total_score = 0
-                    total_max = 0
-                    for ind in sub_indicators:
-                        ind_key = ind["key"]
-                        max_score = max_scores.get(ind_key, 10)
-                        total_max += max_score
-                        total_score += indicator_dict.get(ind_key, 0)
-                    if total_max > 0:
-                        dimension_scores[key] = round(total_score / total_max * 100, 2)
-                    else:
-                        dimension_scores[key] = 0
+                final_score = getattr(sub, f"final_score_{key}", None)
+                ai_score = getattr(sub, f"score_{key}", 0)
+                
+                if final_score is not None and float(final_score) > 0:
+                    dimension_scores[key] = round(float(final_score), 2)
                 else:
-                    dimension_scores[key] = 0
+                    dimension_scores[key] = round(float(ai_score), 2)
             
-            total = sum(indicator_dict.values())
+            # ✅ 关键修复：总分直接使用数据库中的 total_score（百分制）
+            total = sub.total_score if sub.total_score else 0
             
             all_scores[sub.student_username][task.id] = {
-                "total": round(total, 2),
+                "total": round(float(total), 2),
                 "dimension_scores": dimension_scores,
                 "indicator_scores": indicator_dict,
                 "max_scores": max_scores

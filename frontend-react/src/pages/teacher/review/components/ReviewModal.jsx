@@ -1,6 +1,7 @@
+// ==================== ReviewModal.jsx ====================
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Modal, Button, Descriptions, Tag, Tabs, Space, Typography, Popconfirm } from 'antd';
-import { FileWordOutlined, ReloadOutlined, UndoOutlined } from '@ant-design/icons';
+import { Modal, Button, Descriptions, Tag, Tabs, Space, Typography, Popconfirm, Alert } from 'antd';
+import { FileWordOutlined, ReloadOutlined, UndoOutlined, EditOutlined } from '@ant-design/icons';
 import { SubmissionContent } from './SubmissionContent';
 import { IndicatorScores } from './IndicatorScores';
 import { ScoreSummary } from './ScoreSummary';
@@ -27,7 +28,6 @@ export const ReviewModal = ({
     const [isReScoring, setIsReScoring] = useState(false);
     const scoresRef = useRef({});
 
-    // 当 submission 变化时重置状态
     useEffect(() => {
         if (submission) {
             const initialScores = {};
@@ -50,14 +50,19 @@ export const ReviewModal = ({
 
             setScores(initialScores);
             scoresRef.current = initialScores;
-            setActiveTab('content');
+
+            // AI评分失败时，默认展开指标评分标签
+            if (submission.ai_score_status === 'failed' && !submission.is_reviewed) {
+                setActiveTab('indicators');
+            } else {
+                setActiveTab('content');
+            }
         }
     }, [submission, dimensions]);
 
     const calculatedScores = useMemo(() => {
         if (!submission) return { dimensionScores: {}, totalScore: 0 };
 
-        // ✅ 直接使用 scores（状态），而不是 scoresRef.current
         const indicatorScores = scores || {};
         const indicatorMaxScores = submission.indicator_max_scores || {};
         const enabledIndicators = submission.enabled_indicators || [];
@@ -114,20 +119,17 @@ export const ReviewModal = ({
         totalScore = Math.round(totalScore * 100) / 100;
 
         return { dimensionScores, totalScore };
-    }, [scores, submission, dimensions]);  // ✅ 依赖 scores
+    }, [scores, submission, dimensions]);
 
-    // ✅ 实时计算的维度得分和总分
     const liveDimensionScores = calculatedScores.dimensionScores;
     const liveTotalScore = calculatedScores.totalScore;
     const liveLevel = getLevelByScore(liveTotalScore);
     const liveLevelColor = getLevelColor(liveLevel);
 
     const handleScoreChange = (key, value) => {
-        console.log(`🔍 handleScoreChange 收到: key=${key}, value=${value}`);
         setScores(prev => {
             const newScores = { ...prev, [key]: value };
             scoresRef.current = newScores;
-            console.log('🔍 更新后的 scores:', newScores);
             return newScores;
         });
     };
@@ -137,20 +139,14 @@ export const ReviewModal = ({
         setIsSubmitting(true);
         try {
             const currentScores = scoresRef.current;
-            const originalIndicatorScores = submission.indicator_scores || {};
 
-            // 收集所有修改后的指标分数
             const modifiedIndicatorScores = {};
-            Object.keys(originalIndicatorScores).forEach(key => {
-                if (currentScores[key] !== undefined && currentScores[key] !== originalIndicatorScores[key]) {
-                    modifiedIndicatorScores[key] = currentScores[key];
-                }
-            });
-            // 如果当前分数中有新增的指标（不在原始中）
+            // 收集所有指标分数（包括手动填写的）
             Object.keys(currentScores).forEach(key => {
                 if (key.match(/^[ABCD]\d$/)) {
-                    if (!(key in originalIndicatorScores) && currentScores[key] !== undefined) {
-                        modifiedIndicatorScores[key] = currentScores[key];
+                    const val = currentScores[key];
+                    if (val !== undefined && val !== null && val > 0) {
+                        modifiedIndicatorScores[key] = val;
                     }
                 }
             });
@@ -167,9 +163,8 @@ export const ReviewModal = ({
         } finally {
             setIsSubmitting(false);
         }
-    }, [submission, dimensions, onReviewSubmit, onClose]);
+    }, [submission, onReviewSubmit, onClose]);
 
-    // 撤回发布
     const handleUnpublishClick = useCallback(async () => {
         if (!submission) return;
         const success = await onUnpublish(submission.id);
@@ -191,6 +186,12 @@ export const ReviewModal = ({
         }
     }, [submission, onReScore, onClose]);
 
+    // ✅ 发布成绩处理函数
+    const handlePublishClick = useCallback(() => {
+        if (!submission) return;
+        onPublish(submission.id);
+    }, [submission, onPublish]);
+
     if (!submission) return null;
 
     const isReviewed = submission.is_reviewed === 1;
@@ -198,11 +199,8 @@ export const ReviewModal = ({
     const isPending = !isReviewed;
     const isScoring = submission.ai_score_status === 'scoring';
     const isAiScored = submission.ai_scored || false;
+    const isAiFailed = submission.ai_score_status === 'failed';
 
-    // 指标评分（用于展示）
-    const indicatorScores = submission.indicator_scores || {};
-
-    // ========== 渲染共用部分 ==========
     const renderScoreTabs = (isEditMode) => (
         <Tabs activeKey={activeTab} onChange={setActiveTab}>
             <TabPane tab="📄 提交内容" key="content">
@@ -239,7 +237,7 @@ export const ReviewModal = ({
         </Tabs>
     );
 
-    const renderStudentInfo = (statusTag, statusColor) => (
+    const renderStudentInfo = (statusTag) => (
         <Descriptions column={2} bordered size="small" style={{ marginBottom: 16 }}>
             <Descriptions.Item label="学号">{submission.student_username}</Descriptions.Item>
             <Descriptions.Item label="姓名">
@@ -265,7 +263,7 @@ export const ReviewModal = ({
         </Descriptions>
     );
 
-    // 已发布 → 显示「撤回发布」和「关闭」
+    // 已发布
     if (isPublished) {
         return (
             <Modal
@@ -277,15 +275,11 @@ export const ReviewModal = ({
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                         <Popconfirm
                             title="确定撤回该成绩？"
-                            description="撤回后学生将不可见，教师可重新修改后再次发布"
                             onConfirm={handleUnpublishClick}
                             okText="确定撤回"
                             cancelText="取消"
-                            placement="top"
                         >
-                            <Button icon={<UndoOutlined />} danger>
-                                撤回发布
-                            </Button>
+                            <Button icon={<UndoOutlined />} danger>撤回发布</Button>
                         </Popconfirm>
                         <Button onClick={onClose}>关闭</Button>
                     </div>
@@ -299,7 +293,7 @@ export const ReviewModal = ({
         );
     }
 
-    // 已审批，未发布 → 显示「发布成绩」「重新AI评分」「关闭」
+    // 已审批未发布
     if (isReviewed && !isPublished) {
         return (
             <Modal
@@ -309,23 +303,11 @@ export const ReviewModal = ({
                 width={950}
                 footer={
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                        <Popconfirm
-                            title="确定重新AI评分？"
-                            description="将重新触发AI评分，当前审批结果将被覆盖"
-                            onConfirm={handleReScoreClick}
-                            okText="确定重评"
-                            cancelText="取消"
-                            placement="top"
-                        >
-                            <Button icon={<ReloadOutlined />} loading={isReScoring}>
-                                重新AI评分
-                            </Button>
-                        </Popconfirm>
                         <Button onClick={onClose}>关闭</Button>
                         <Button
                             type="primary"
                             style={{ background: '#52c41a', borderColor: '#52c41a' }}
-                            onClick={onPublish}
+                            onClick={handlePublishClick}
                         >
                             发布成绩
                         </Button>
@@ -340,44 +322,60 @@ export const ReviewModal = ({
         );
     }
 
-    // 待审批 → 显示「提交审批」「关闭」
+    // 待审批
     return (
         <Modal
-            title="审批评分"
+            title={isAiFailed ? "审批评分（AI评分失败，可手动评分）" : "审批评分"}
             open={visible}
             onCancel={onClose}
             width={950}
             footer={
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                    <Button onClick={onClose}>
-                        {isPending ? '取消' : '关闭'}
-                    </Button>
-                    {isPending && !isScoring && isAiScored && (
-                        <Button
-                            type="primary"
-                            onClick={handleSubmit}
-                            loading={isSubmitting}
-                        >
-                            提交审批
-                        </Button>
-                    )}
-                    {isPending && isScoring && (
-                        <Button disabled>
-                            AI评分中...
-                        </Button>
-                    )}
-                    {isPending && !isAiScored && (
-                        <Button disabled>
-                            等待AI评分完成
-                        </Button>
-                    )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                        {isPending && !isScoring && (
+                            <Popconfirm
+                                title="确定重新AI评分？"
+                                description="将重新触发AI评分，当前数据将被覆盖"
+                                onConfirm={handleReScoreClick}
+                                okText="确定重评"
+                                cancelText="取消"
+                            >
+                                <Button icon={<ReloadOutlined />} loading={isReScoring}>
+                                    重新AI评分
+                                </Button>
+                            </Popconfirm>
+                        )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <Button onClick={onClose}>取消</Button>
+                        {isPending && isScoring && <Button disabled>AI评分中...</Button>}
+                        {isPending && !isScoring && (
+                            <Button
+                                type="primary"
+                                onClick={handleSubmit}
+                                loading={isSubmitting}
+                            >
+                                提交审批
+                            </Button>
+                        )}
+                    </div>
                 </div>
             }
         >
             <div style={{ maxHeight: '70vh', overflow: 'auto', paddingRight: 8 }}>
+                {isAiFailed && (
+                    <Alert
+                        type="warning"
+                        message="AI评分失败"
+                        description="AI未能完成评分。您可以点击「重新AI评分」重试，或直接在「指标评分」标签页手动填写分数后提交审批。"
+                        showIcon
+                        style={{ marginBottom: 16 }}
+                    />
+                )}
+
                 {renderStudentInfo(
-                    <Tag color={isPublished ? 'green' : isReviewed ? 'orange' : 'red'}>
-                        {isPublished ? '已发布' : isReviewed ? '已批改，未发布' : '待批改'}
+                    <Tag color={isAiFailed ? 'red' : 'blue'}>
+                        {isAiFailed ? 'AI评分失败' : '待批改'}
                     </Tag>
                 )}
                 {renderScoreTabs(true)}

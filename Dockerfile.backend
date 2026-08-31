@@ -2,6 +2,10 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# ✅ 设置时区为上海
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 # ========== 换国内源 ==========
 RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
     sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
@@ -12,13 +16,14 @@ RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
+    curl \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # ========== 安装 Python 依赖 ==========
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ✅ 升级 openai 并安装 gunicorn
 RUN pip install --upgrade openai gunicorn
 
 # ========== 复制代码 ==========
@@ -30,11 +35,15 @@ RUN mkdir -p /app/data/uploads /app/data/exports /app/data/temp /app/logs
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# ✅ 使用 Gunicorn + Uvicorn workers（4个worker进程，支持并发）
+# ✅ 优化 Gunicorn 配置（支持100+并发）
 CMD ["gunicorn", "backend.main:app", \
      "--workers", "4", \
      "--worker-class", "uvicorn.workers.UvicornWorker", \
      "--bind", "0.0.0.0:8000", \
      "--timeout", "300", \
      "--graceful-timeout", "30", \
-     "--keep-alive", "5"]
+     "--keep-alive", "5", \
+     "--max-requests", "1000", \
+     "--max-requests-jitter", "100", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-"]

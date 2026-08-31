@@ -1,57 +1,49 @@
 import { useState, useEffect, useCallback } from 'react';
 import { message } from 'antd';
-import {getTasks, getTaskReviews, reviewSubmission, publishScore, publishBatchScores, reScoreSubmission,unpublishSubmission} from '@/api';
+import { getTasks, getTaskReviews, reviewSubmission, publishScore, publishBatchScores, reScoreSubmission, unpublishSubmission, getClasses } from '@/api';
 import { getDimensions } from '@/api';
 
 export const useReview = () => {
     const [tasks, setTasks] = useState([]);
+    const [classes, setClasses] = useState([]);
+    const [selectedClassId, setSelectedClassId] = useState(null);
     const [selectedTaskId, setSelectedTaskId] = useState(null);
     const [submissions, setSubmissions] = useState([]);
     const [dimensions, setDimensions] = useState([]);
     const [loading, setLoading] = useState(false);
     const [publishing, setPublishing] = useState(false);
-    const [tasksLoaded, setTasksLoaded] = useState(false);
 
-    // 加载任务列表
-    const fetchTasks = useCallback(async () => {
+    const fetchClasses = useCallback(async () => {
         try {
-            const taskList = await getTasks();
-            setTasks(taskList || []);
-            if (taskList && taskList.length > 0) {
-                const firstId = taskList[0].id;
-                if (firstId && firstId > 0) {
-                    setSelectedTaskId(firstId);
-                    setTasksLoaded(true);
-                } else {
-                    setSelectedTaskId(null);
-                    setTasksLoaded(false);
-                    message.warning('任务ID无效，请检查数据');
-                }
-            } else {
-                setSelectedTaskId(null);
-                setTasksLoaded(false);
-                message.warning('暂无任务，请先创建');
+            const data = await getClasses();
+            const classList = Array.isArray(data) ? data : (data?.data || []);
+            setClasses(classList);
+            if (classList.length > 0) {
+                setSelectedClassId(classList[0].id);
             }
         } catch (error) {
-            console.error('获取任务列表失败:', error);
-            message.error('获取任务列表失败');
-            setTasksLoaded(false);
+            console.error('获取班级列表失败:', error);
         }
     }, []);
 
-    // 加载维度配置
+    const fetchTasks = useCallback(async () => {
+        try {
+            const data = await getTasks();
+            const taskList = Array.isArray(data) ? data : (data?.data || []);
+            setTasks(taskList);
+        } catch (error) {
+            console.error('获取任务列表失败:', error);
+        }
+    }, []);
+
     const fetchDimensions = useCallback(async () => {
         try {
             const data = await getDimensions();
             let dims = [];
-            if (data && Array.isArray(data)) {
-                dims = data;
-            } else if (data && data.dimensions && Array.isArray(data.dimensions)) {
-                dims = data.dimensions;
-            }
+            if (data && Array.isArray(data)) dims = data;
+            else if (data && data.dimensions) dims = data.dimensions;
             setDimensions(dims);
         } catch (error) {
-            console.error('获取维度配置失败:', error);
             setDimensions([
                 { key: 'ai_retrieval', name: 'AI融合智能检索能力' },
                 { key: 'critical', name: '批判性评估能力' },
@@ -61,30 +53,22 @@ export const useReview = () => {
         }
     }, []);
 
-    // 加载提交记录
     const fetchSubmissions = useCallback(async (taskId) => {
         if (!taskId) return;
         setLoading(true);
         try {
             const response = await getTaskReviews(taskId);
             let list = [];
-            if (Array.isArray(response)) {
-                list = response;
-            } else if (response && Array.isArray(response.data)) {
-                list = response.data;
-            } else if (response && response.data && Array.isArray(response.data.data)) {
-                list = response.data.data;
-            }
+            if (Array.isArray(response)) list = response;
+            else if (response && Array.isArray(response.data)) list = response.data;
             setSubmissions(list);
         } catch (error) {
             console.error('获取提交记录失败:', error);
-            message.error('获取提交记录失败');
         } finally {
             setLoading(false);
         }
     }, []);
 
-    // 审批提交
     const handleReviewSubmit = useCallback(async (submissionId, dimensionScores, comment, indicatorScores = {}) => {
         try {
             await reviewSubmission(submissionId, {
@@ -96,13 +80,11 @@ export const useReview = () => {
             await fetchSubmissions(selectedTaskId);
             return true;
         } catch (error) {
-            console.error('审批失败:', error);
-            message.error(error.message || '审批失败，请重试');
+            message.error(error.message || '审批失败');
             return false;
         }
     }, [selectedTaskId, fetchSubmissions]);
 
-    // 发布单条成绩
     const handlePublish = useCallback(async (submissionId) => {
         setPublishing(true);
         try {
@@ -111,22 +93,19 @@ export const useReview = () => {
             await fetchSubmissions(selectedTaskId);
             return true;
         } catch (error) {
-            console.error('发布失败:', error);
-            message.error(error.message || '发布失败，请重试');
+            message.error(error.message || '发布失败');
             return false;
         } finally {
             setPublishing(false);
         }
     }, [selectedTaskId, fetchSubmissions]);
 
-    // 批量发布
     const handleBatchPublish = useCallback(async () => {
         const taskId = Number(selectedTaskId);
         if (!selectedTaskId || taskId <= 0 || isNaN(taskId)) {
             message.warning('请先选择一个有效的任务');
             return false;
         }
-
         const unPublished = submissions.filter(
             s => s.is_reviewed === 1 && (s.score_published === 0 || s.score_published === null)
         );
@@ -134,68 +113,43 @@ export const useReview = () => {
             message.warning('没有可发布的成绩');
             return false;
         }
-
         setPublishing(true);
         try {
-            const token = JSON.parse(sessionStorage.getItem('teacherUser')).access_token;
-            const response = await fetch('http://localhost:8000/api/review/publish_batch', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ task_id: taskId })
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || `HTTP ${response.status}`);
-            }
-
-            const result = await response.json();
-            message.success(result.message || `成功发布 ${unPublished.length} 份成绩`);
+            await publishBatchScores(taskId);
+            message.success(`成功发布 ${unPublished.length} 份成绩`);
+            await fetchSubmissions(selectedTaskId);
             return true;
         } catch (error) {
-            console.error('批量发布失败:', error);
-            message.error('批量发布失败: ' + error.message);
+            message.error('批量发布失败');
             return false;
         } finally {
             setPublishing(false);
         }
-    }, [selectedTaskId, submissions]);
+    }, [selectedTaskId, submissions, fetchSubmissions]);
 
-    // ========== 🆕 重新AI评分 ==========
     const handleReScore = useCallback(async (submissionId) => {
         try {
-            const result = await reScoreSubmission(submissionId);
-            const messageText = result?.message || '已重新触发AI评分，完成后请重新审批';
-            message.success(messageText);
+            await reScoreSubmission(submissionId);
+            message.success('已重新触发AI评分');
             await fetchSubmissions(selectedTaskId);
             return true;
         } catch (error) {
-            console.error('重评失败:', error);
-            const errorMsg = error.response?.data?.detail || error.message || '重评失败，请重试';
-            message.error(errorMsg);
+            message.error(error.response?.data?.detail || '重评失败');
             return false;
         }
     }, [selectedTaskId, fetchSubmissions]);
 
-    // ========== 🆕 撤回发布 ==========
     const handleUnpublish = useCallback(async (submissionId) => {
         try {
-            const result = await unpublishSubmission(submissionId);
-            const messageText = result?.message || '成绩已撤回，可重新修改后发布';
-            message.success(messageText);
+            await unpublishSubmission(submissionId);
+            message.success('成绩已撤回');
             await fetchSubmissions(selectedTaskId);
             return true;
         } catch (error) {
-            console.error('撤回失败:', error);
-            const errorMsg = error.response?.data?.detail || error.message || '撤回失败，请重试';
-            message.error(errorMsg);
+            message.error(error.response?.data?.detail || '撤回失败');
             return false;
         }
     }, [selectedTaskId, fetchSubmissions]);
-
 
     // 打开Word文档
     const openWordDocument = useCallback(async (filePath) => {
@@ -248,34 +202,47 @@ export const useReview = () => {
         }
     }, []);
 
-    // 初始化
     useEffect(() => {
+        fetchClasses();
         fetchTasks();
         fetchDimensions();
-    }, [fetchTasks, fetchDimensions]);
+    }, []);
 
-    // 当任务变化时加载提交
+    useEffect(() => {
+        if (selectedClassId) {
+            const classTasks = tasks.filter(t => t.class_id === selectedClassId);
+            if (classTasks.length > 0) {
+                setSelectedTaskId(classTasks[0].id);
+            } else {
+                setSelectedTaskId(null);
+                setSubmissions([]);
+            }
+        }
+    }, [selectedClassId, tasks]);
+
     useEffect(() => {
         if (selectedTaskId) {
             fetchSubmissions(selectedTaskId);
         }
-    }, [selectedTaskId, fetchSubmissions]);
+    }, [selectedTaskId]);
 
     return {
         tasks,
+        classes,
         selectedTaskId,
         setSelectedTaskId,
+        selectedClassId,
+        setSelectedClassId,
         submissions,
         dimensions,
         loading,
         publishing,
-        tasksLoaded,
         fetchSubmissions,
         handleReviewSubmit,
         handlePublish,
         handleBatchPublish,
-        handleReScore,      // 🆕
-        handleUnpublish,    // 🆕
+        handleReScore,
+        handleUnpublish,
         openWordDocument
     };
 };

@@ -34,6 +34,7 @@ export default function TeacherTasks() {
         updateTemplate: updateTemplateApi,
         deleteTemplate: deleteTemplateApi,
         shareTemplate: shareTemplateApi,
+        unshareTemplate: unshareTemplateApi,
     } = useTemplates();
 
     // ========== 模板弹窗状态 ==========
@@ -306,8 +307,13 @@ export default function TeacherTasks() {
 
     const handleConfirmShare = async (teacherUsername) => {
         await shareTemplateApi(shareTemplateId, teacherUsername);
-        message.success('模板共享成功');
         setShareModalVisible(false);
+        fetchTemplates();
+    };
+
+    const handleUnshare = async (templateId, teacherUsername) => {
+        await unshareTemplateApi(templateId, teacherUsername);
+        message.success(`已取消共享给 ${teacherUsername}`);
         fetchTemplates();
     };
 
@@ -365,6 +371,7 @@ export default function TeacherTasks() {
                 onDelete={handleDeleteTemplate}
                 onCopy={handleCopyTemplate}
                 onShare={handleOpenShareModal}
+                onUnshare={handleUnshare}
                 isOwner={isTemplateOwner}
             />
 

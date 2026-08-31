@@ -41,16 +41,23 @@ def get_class(class_id: int) -> Optional[Dict]:
         db.close()
 
 
-def get_teacher_classes(teacher_id: int) -> List[Dict]:
-    """获取教师的所有班级（自己创建的 + 被共享的）"""
+def get_teacher_classes(teacher_id: int, is_admin: bool = False) -> List[Dict]:
+    """获取教师的所有班级（自己创建的 + 被共享的）
+    - admin: 所有班级
+    - 普通教师: 自己创建的 + 被共享的
+    """
     db = SessionLocal()
     try:
-        # 查询自己创建和被共享的班级
-        classes = db.query(Class).outerjoin(
-            ClassTeacher, Class.id == ClassTeacher.class_id
-        ).filter(
-            (Class.teacher_id == teacher_id) | (ClassTeacher.teacher_id == teacher_id)
-        ).distinct().all()
+        if is_admin:
+            # admin 查看所有班级
+            classes = db.query(Class).all()
+        else:
+            # 普通教师查看自己的 + 被共享的
+            classes = db.query(Class).outerjoin(
+                ClassTeacher, Class.id == ClassTeacher.class_id
+            ).filter(
+                (Class.teacher_id == teacher_id) | (ClassTeacher.teacher_id == teacher_id)
+            ).distinct().all()
         
         result = []
         for cls in classes:

@@ -4,7 +4,7 @@ API 路由注册
 
 from fastapi import APIRouter
 
-from backend.api import auth, users, tasks, submissions, review, profile, export, term_scores, rubric
+from backend.api import auth, users, tasks, submissions, review, profile, export, term_scores, rubric, class_teachers
 from backend.api.scores import router as scores_router
 
 
@@ -21,5 +21,6 @@ api_router.include_router(export.router)
 api_router.include_router(term_scores.router)
 api_router.include_router(rubric.router)
 api_router.include_router(scores_router)
+api_router.include_router(class_teachers.router)
 
 __all__ = ["api_router"]

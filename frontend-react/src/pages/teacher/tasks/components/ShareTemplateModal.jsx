@@ -52,14 +52,11 @@ export function ShareTemplateModal({
             message.success(`模板已成功共享给 ${selectedTeacher}`);
             setSelectedTeacher(null);
             setAlreadyShared([...alreadyShared, selectedTeacher]);
-            if (onSuccess) onSuccess();
+            // ✅ 共享成功后关闭弹窗
+            handleCancel();
         } catch (error) {
             const errorMsg = error.response?.data?.detail || error.message;
-            if (errorMsg.includes('已被共享')) {
-                message.warning(`"${selectedTeacher}" 已被共享过`);
-            } else {
-                message.error('共享失败: ' + errorMsg);
-            }
+            message.error('共享失败: ' + errorMsg);
         } finally {
             setLoading(false);
         }

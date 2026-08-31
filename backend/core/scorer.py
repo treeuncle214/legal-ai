@@ -16,6 +16,25 @@ from .calculators.grade_mapper import score_to_level
 logger = logging.getLogger(__name__)
 
 
+def _build_default_rubric_config(enabled_indicators):
+    """构建默认评分配置（所有指标满分10分）"""
+    from backend.config import SCORING_DIMENSIONS
+    indicators = []
+    for dim in SCORING_DIMENSIONS:
+        for ind in dim.get("sub_indicators", []):
+            if enabled_indicators and ind["key"] not in enabled_indicators:
+                continue
+            indicators.append({
+                "indicator_key": ind["key"],
+                "max_score": 10,
+                "prompt": ""
+            })
+    return {
+        "overall_prompt": None,
+        "indicators": indicators
+    }
+
+
 def score_exercise(task: Dict, submission: Dict) -> Dict:
     """
     对平时练习进行AI评分
@@ -25,23 +44,38 @@ def score_exercise(task: Dict, submission: Dict) -> Dict:
     if isinstance(enabled_indicators, str):
         enabled_indicators = [i.strip() for i in enabled_indicators.split(',') if i.strip()]
     
+    # ✅ 安全获取 rubric_config（如果为 None 或空，使用默认配置）
+    rubric_config = task.get("rubric_config") or {}
+    
+    # ✅ 如果 rubric_config 没有指标，使用默认配置
+    if not rubric_config.get("indicators"):
+        rubric_config = _build_default_rubric_config(enabled_indicators)
+        logger.warning("⚠️ rubric_config 为空，使用默认配置（所有指标满分10分）")
+    
     # 获取指标级提示词和满分配置
     indicator_prompts = {}
     indicator_max_scores = {}
-    rubric_config = task.get("rubric_config", {})
     
-    for ind in rubric_config.get("indicators", []):
+    for ind in rubric_config.get("indicators", []) or []:
+        if not ind:
+            continue
         ind_key = ind.get("indicator_key")
         if ind_key:
             if ind.get("prompt"):
                 indicator_prompts[ind_key] = ind["prompt"]
             indicator_max_scores[ind_key] = ind.get("max_score", 10)
     
+    # ✅ 确保所有启用指标都有满分配置
+    if enabled_indicators:
+        for key in enabled_indicators:
+            if key not in indicator_max_scores:
+                indicator_max_scores[key] = 10
+    
     # 构建Prompt（传入 indicator_max_scores 供AI参考）
     prompt = build_exercise_prompt(
-        task, 
-        submission, 
-        enabled_indicators, 
+        task,
+        submission,
+        enabled_indicators,
         indicator_prompts,
         indicator_max_scores
     )
@@ -65,7 +99,7 @@ def score_exercise(task: Dict, submission: Dict) -> Dict:
         final_indicator_scores[key] = max(0.0, min(raw_score, float(max_score)))
         print(f"🔍 指标 {key}: 最终得分={final_indicator_scores[key]}")
     
-    # ✅ 使用 dimension_calculator 的 calculate_dimension_scores 函数
+    # 使用 dimension_calculator 的 calculate_dimension_scores 函数
     dimension_scores = calculate_dimension_scores(
         final_indicator_scores,
         enabled_indicators,
@@ -101,21 +135,18 @@ def score_exercise(task: Dict, submission: Dict) -> Dict:
         }
     }
 
+
 def score_final_report(task: Dict, content: str) -> Dict:
-    """
-    对期末报告进行AI评分
-    """
+    """对期末报告进行AI评分"""
     prompt = build_final_report_prompt(task, content)
     response = call_deepseek_api_json(prompt)
     
     if response is None:
         return generate_fallback_report_score(task, content)
     
-    # 解析模块评分
     module_scores = response.get("module_scores", {})
     module_comments = response.get("module_comments", {})
     
-    # 映射到维度
     mapping = {
         "ai_retrieval": ["问题界定与关键词提取", "AI工具使用与策略优化"],
         "critical": ["信息源评估与筛选"],
@@ -144,6 +175,7 @@ def score_final_report(task: Dict, content: str) -> Dict:
         "metadata": {"prompt_type": "final_report"}
     }
 
+
 def generate_fallback_score(task: Dict, submission: Dict, indicator_max_scores: Dict = None) -> Dict:
     """生成降级评分（AI不可用时）"""
     enabled_indicators = task.get("enabled_indicators", [])
@@ -166,10 +198,8 @@ def generate_fallback_score(task: Dict, submission: Dict, indicator_max_scores: 
             indicator_scores[key] = max(0.0, min(score, float(max_score)))
             indicator_comments[key] = f"AI服务暂时不可用，此为临时评分（{indicator_scores[key]}/{max_score}分），请教师重新审批。"
     
-    # ✅ 修复：从 backend.config 导入 SCORING_DIMENSIONS
     from backend.config import SCORING_DIMENSIONS
     
-    # 计算维度得分（使用实际满分）
     dimension_scores = {}
     for dim in SCORING_DIMENSIONS:
         key = dim["key"]
@@ -213,7 +243,7 @@ def generate_fallback_score(task: Dict, submission: Dict, indicator_max_scores: 
 def generate_fallback_report_score(task: Dict, content: str) -> Dict:
     """生成期末报告降级评分"""
     import random
-    modules = ["问题界定与关键词提取", "AI工具使用与策略优化", "信息源评估与筛选", 
+    modules = ["问题界定与关键词提取", "AI工具使用与策略优化", "信息源评估与筛选",
                "伦理合规与学术诚信", "信息整合与结构化", "法律分析与推理", "结论与建议"]
     
     module_scores = {module: random.randint(60, 90) for module in modules}
@@ -246,7 +276,6 @@ def generate_fallback_report_score(task: Dict, content: str) -> Dict:
     }
 
 
-# 主入口函数（保持向后兼容）
 def score_submission(task: Dict, submission: Dict) -> Dict:
     """统一的评分入口"""
     task_type = task.get("task_type", "课堂练习")

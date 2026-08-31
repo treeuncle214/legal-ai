@@ -180,7 +180,7 @@ async def share_template(
     
     success = share_template_with_teacher(template_id, share_data.teacher_username)
     if not success:
-        raise HTTPException(status_code=400, detail="该教师已被共享")
+        raise HTTPException(status_code=400, detail="共享失败：教师不存在或已共享")
     
     return Response(message=f"模板已共享给 {share_data.teacher_username}")
 

@@ -216,8 +216,11 @@ async def get_classes(
     teacher = get_user(current_user["username"])
     if not teacher:
         raise HTTPException(status_code=404, detail="教师不存在")
-
-    classes = get_teacher_classes(teacher["id"])
+    
+    is_admin = current_user.get("username") == "admin"
+    
+    from backend.database.classes import get_teacher_classes
+    classes = get_teacher_classes(teacher["id"], is_admin=is_admin)
     return Response(data=classes)
 
 

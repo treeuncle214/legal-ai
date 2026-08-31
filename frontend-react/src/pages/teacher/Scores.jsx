@@ -89,7 +89,15 @@ export default function TeacherScores() {
                 params.task_type = selectedTaskType;
             }
 
-            const token = localStorage.getItem('token');
+            // ✅ 修复：从 sessionStorage 的 teacherUser 中获取 token
+            let token = null;
+            try {
+                const teacherUser = JSON.parse(sessionStorage.getItem('teacherUser'));
+                token = teacherUser?.access_token;
+            } catch {
+                token = localStorage.getItem('token');
+            }
+
             if (!token) {
                 message.error('请重新登录');
                 window.location.href = '/teacher/login';
@@ -107,6 +115,7 @@ export default function TeacherScores() {
 
             if (response.status === 401) {
                 message.error('登录已过期，请重新登录');
+                sessionStorage.removeItem('teacherUser');
                 localStorage.removeItem('token');
                 window.location.href = '/teacher/login';
                 return;
@@ -117,7 +126,6 @@ export default function TeacherScores() {
                 try {
                     const errorData = await response.json();
                     if (errorData.detail) {
-                        // ✅ 提取友好的错误信息
                         errorMsg = errorData.detail;
                     }
                 } catch {
@@ -131,7 +139,7 @@ export default function TeacherScores() {
             const downloadUrl = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = downloadUrl;
-            const className = analyticsData?.class_name || '班级';
+            const className = classes.find(c => c.id === selectedClassId)?.name || '班级';
             link.setAttribute('download', `全班成绩_${className}_${new Date().toISOString().slice(0, 10)}.xlsx`);
             document.body.appendChild(link);
             link.click();
@@ -140,23 +148,12 @@ export default function TeacherScores() {
             message.success('导出成功');
         } catch (error) {
             console.error('导出失败:', error);
-            // ✅ 提取友好的错误信息
-            let errorMsg = '导出失败';
-            if (error.message) {
-                try {
-                    const parsed = JSON.parse(error.message);
-                    if (parsed.detail) {
-                        errorMsg = parsed.detail;
-                    }
-                } catch {
-                    errorMsg = error.message;
-                }
-            }
-            message.error(errorMsg);
+            message.error('导出失败: ' + (error.message || '未知错误'));
         } finally {
             setExporting(false);
         }
     };
+
     
     
     const handleStudentClick = (username) => {

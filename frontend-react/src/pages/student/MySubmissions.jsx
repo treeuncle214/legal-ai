@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Table, Card, Tag, Button, Modal, Descriptions, message, Collapse, Typography, Space } from 'antd';
-import { EyeOutlined, FileWordOutlined } from '@ant-design/icons';
+import { EyeOutlined, FileWordOutlined, RobotOutlined, FileTextOutlined, DownloadOutlined } from '@ant-design/icons';
 import { getStudentSubmissions } from '../../api';
 
 const { Panel } = Collapse;
@@ -82,7 +82,6 @@ export default function MySubmissions() {
                 throw new Error(`HTTP ${response.status}`);
             }
 
-            // 从 Content-Disposition 头提取原始文件名
             const contentDisposition = response.headers.get('Content-Disposition');
             let originalFileName = filename;
             if (contentDisposition) {
@@ -187,45 +186,101 @@ export default function MySubmissions() {
 
                         <h4>提交内容</h4>
                         <Collapse ghost expandIconPosition="end" activeKey={expandedKeys} onChange={(keys) => setExpandedKeys(keys)}>
-                            <Panel header={`📋 AI交互检索${currentSubmission.process_log ? ` (${currentSubmission.process_log.length}字符)` : ' (无内容)'}`} key="process_log">
+                            {/* ✅ AI交互记录（文件1的内容） */}
+                            <Panel
+                                header={
+                                    <span>
+                                        <RobotOutlined style={{ marginRight: 8, color: '#1890ff' }} />
+                                        AI交互记录
+                                        {currentSubmission.ai_interaction_log ? (
+                                            <Tag color="blue" style={{ marginLeft: 8 }}>
+                                                {currentSubmission.ai_interaction_log.length} 字符
+                                            </Tag>
+                                        ) : (
+                                            <Tag color="default" style={{ marginLeft: 8 }}>无内容</Tag>
+                                        )}
+                                    </span>
+                                }
+                                key="ai_interaction_log"
+                            >
+                                <div style={{ background: '#f5f5f5', padding: 12, borderRadius: 8, whiteSpace: 'pre-wrap', maxHeight: 300, overflow: 'auto' }}>
+                                    {currentSubmission.ai_interaction_log || '无'}
+                                </div>
+                            </Panel>
+
+                            {/* ✅ 作业正文（文件2的内容） */}
+                            <Panel
+                                header={
+                                    <span>
+                                        <FileTextOutlined style={{ marginRight: 8, color: '#52c41a' }} />
+                                        作业正文
+                                        {currentSubmission.process_log ? (
+                                            <Tag color="green" style={{ marginLeft: 8 }}>
+                                                {currentSubmission.process_log.length} 字符
+                                            </Tag>
+                                        ) : (
+                                            <Tag color="default" style={{ marginLeft: 8 }}>无内容</Tag>
+                                        )}
+                                    </span>
+                                }
+                                key="process_log"
+                            >
                                 <div style={{ background: '#f5f5f5', padding: 12, borderRadius: 8, whiteSpace: 'pre-wrap', maxHeight: 300, overflow: 'auto' }}>
                                     {currentSubmission.process_log || '无'}
                                 </div>
                             </Panel>
-                            <Panel header={`📄 作业正文${currentSubmission.final_output ? ` (${currentSubmission.final_output.length}字符)` : ' (无内容)'}`} key="final_output">
-                                <div style={{ background: '#f5f5f5', padding: 12, borderRadius: 8, whiteSpace: 'pre-wrap', maxHeight: 300, overflow: 'auto' }}>
-                                    {currentSubmission.final_output || '无'}
-                                </div>
-                            </Panel>
-                            {/* Word文档下载按钮 - 放在最下面作为独立面板 */}
+
+                            {/* ✅ Word文档下载（独立面板，不重复） */}
                             {currentSubmission.word_file_path && (
                                 <Panel
-                                    header={`📎 Word文档下载`}
+                                    header={
+                                        <span>
+                                            <DownloadOutlined style={{ marginRight: 8, color: '#722ed1' }} />
+                                            Word文档下载
+                                            <Tag color="purple" style={{ marginLeft: 8 }}>
+                                                {currentSubmission.word_file_path.split(',').filter(f => f.trim()).length} 个文件
+                                            </Tag>
+                                        </span>
+                                    }
                                     key="word_files"
-                                    style={{ border: 'none' }}
                                 >
-                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '8px 0' }}>
-                                        {currentSubmission.word_file_path.split(',').map((f, idx) => (
-                                            <Button
-                                                key={idx}
-                                                type="primary"
-                                                icon={<FileWordOutlined />}
-                                                onClick={() => downloadWordFile(f.trim())}
-                                            >
-                                                查看 Word 文档 {idx + 1}
-                                            </Button>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '8px 0' }}>
+                                        {currentSubmission.word_file_path.split(',').filter(f => f.trim()).map((f, idx) => (
+                                            <div key={idx} style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                padding: '8px 12px',
+                                                background: '#fafafa',
+                                                borderRadius: 6,
+                                                border: '1px solid #f0f0f0'
+                                            }}>
+                                                <span>
+                                                    <FileWordOutlined style={{ marginRight: 8, color: '#1890ff' }} />
+                                                    文件 {idx + 1}
+                                                </span>
+                                                <Button
+                                                    type="primary"
+                                                    size="small"
+                                                    icon={<DownloadOutlined />}
+                                                    onClick={() => downloadWordFile(f.trim())}
+                                                >
+                                                    下载
+                                                </Button>
+                                            </div>
                                         ))}
-                                        <Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
-                                            （点击下载文档）
-                                        </Text>
+                                    </div>
+                                    <div style={{ marginTop: 4, color: '#999', fontSize: 12 }}>
+                                        💡 文件1为AI交互记录，文件2为作业正文
                                     </div>
                                 </Panel>
                             )}
                         </Collapse>
-                        {/* ========== 指标评分详情（新增） ========== */}
+
+                        {/* 指标评分详情 */}
                         {currentSubmission.indicator_scores && Object.keys(currentSubmission.indicator_scores).length > 0 && (
                             <>
-                                <h4>指标评分详情</h4>
+                                <h4 style={{ marginTop: 16 }}>指标评分详情</h4>
                                 <Descriptions column={2} bordered size="small" style={{ marginBottom: 16 }}>
                                     {Object.entries(currentSubmission.indicator_scores).map(([key, score]) => (
                                         <Descriptions.Item key={key} label={key}>
@@ -236,11 +291,6 @@ export default function MySubmissions() {
                                                 <Tag style={{ marginLeft: 8 }}>
                                                     {currentSubmission.indicator_levels[key]}
                                                 </Tag>
-                                            )}
-                                            {currentSubmission.indicator_comments && currentSubmission.indicator_comments[key] && (
-                                                <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
-                                                    {currentSubmission.indicator_comments[key]}
-                                                </div>
                                             )}
                                         </Descriptions.Item>
                                     ))}
@@ -255,22 +305,6 @@ export default function MySubmissions() {
                                     {currentSubmission.teacher_comment}
                                 </div>
                             </>
-                        )}
-
-                        {currentSubmission.is_reviewed && currentSubmission.score_published === 1 && (
-                            <div style={{ marginTop: 16, textAlign: 'center' }}>
-                                <Tag color="blue" style={{ fontSize: 14, padding: '4px 16px' }}>
-                                    💡 成绩已公布，请到「成绩总结」页面查看
-                                </Tag>
-                            </div>
-                        )}
-
-                        {currentSubmission.is_reviewed && currentSubmission.score_published === 0 && (
-                            <div style={{ marginTop: 16, textAlign: 'center' }}>
-                                <Tag color="orange" style={{ fontSize: 14, padding: '4px 16px' }}>
-                                    ⏳ 教师已批改，成绩尚未公布
-                                </Tag>
-                            </div>
                         )}
                     </div>
                 )}
