@@ -256,7 +256,7 @@ npm run dev
 docker compose up -d --build
 ```
 
-访问 http://localhost 即可使用。默认数据库账号密码见 `docker-compose.yml`，生产环境请通过环境变量覆盖。
+访问 http://localhost 即可使用。`POSTGRES_PASSWORD`、`SECRET_KEY`、`REFRESH_SECRET_KEY` 均为必填项（compose 启动时强制校验，未设置会直接报错），请在根目录 `.env` 中配置后再启动。
 
 ---
 

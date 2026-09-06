@@ -12,7 +12,7 @@ from backend.core.scorer import test_api
 
 from backend.api import api_router
 from backend.database import init_db
-from backend.config import APP_NAME, APP_VERSION, UPLOAD_DIR, LOG_LEVEL  # 导入 UPLOAD_DIR
+from backend.config import APP_NAME, APP_VERSION, UPLOAD_DIR, LOG_LEVEL, CORS_ORIGINS  # 导入 UPLOAD_DIR
 
 # 日志配置
 logging.basicConfig(
@@ -35,7 +35,7 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 # CORS配置
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:5175"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

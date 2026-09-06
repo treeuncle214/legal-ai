@@ -206,7 +206,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/assessment.db")
 
 # ========== 应用信息 ==========
 APP_NAME = "法律信息智能检索 - AI能力测评系统"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.3.0"
 
 # ========== 安全配置 ==========
 # JWT 密钥（生产环境必须修改）
@@ -226,4 +226,4 @@ if ENVIRONMENT == "production":
 
 # ========== CORS 配置 ==========
 # 允许的跨域来源（生产环境设置具体域名）
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:8000").split(",")
+CORS_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:8000").split(",") if origin.strip()]
