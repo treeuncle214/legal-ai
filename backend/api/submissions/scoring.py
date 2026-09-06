@@ -1,6 +1,7 @@
 """
 AI评分核心逻辑
 """
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -48,12 +49,13 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
             "process_log": submission.get("process_log", ""),
             "ai_interaction_log": submission.get("ai_interaction_log", ""),
             "final_output": submission.get("final_output", ""),
+            "word_content": submission.get("word_content", ""),
             "submit_type": submit_type,
             "word_file_path": submission.get("word_file_path", ""),
         }
         
-        # 调用评分引擎
-        score_result = score_submission(task_dict, score_data)
+        # 调用评分引擎（同步 AI 调用放到线程池，避免阻塞事件循环）
+        score_result = await asyncio.to_thread(score_submission, task_dict, score_data)
         
         # ✅ 确保 score_result 包含 indicator_max_scores
         if "indicator_max_scores" not in score_result or not score_result["indicator_max_scores"]:
@@ -78,7 +80,7 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
             "score_integration": score_result["dimension_scores"].get("integration", 0),
             "ai_comment": score_result.get("ai_comment", "AI评分完成"),
             "ai_score_status": "completed",
-            "ai_score_detail": json.dumps(score_result.get("indicator_grades", {})) if "indicator_grades" in score_result else json.dumps(score_result.get("module_scores", {})),
+            "ai_score_detail": json.dumps(score_result.get("indicator_grades", {})),
             "total_score": score_result.get("total_score", 0)
         }
         update_scores(submission_id, scores_dict)
@@ -92,6 +94,7 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
             indicator_levels = score_result.get("indicator_levels", {})
             indicator_comments = score_result.get("indicator_comments", {})
             indicator_max_scores = score_result.get("indicator_max_scores", {})
+            raw_scores = score_result.get("raw_scores", {})
             
             if not indicator_max_scores:
                 task_rubric = db.query(TaskRubric).filter(TaskRubric.task_id == task_id).first()
@@ -113,7 +116,7 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
                         submission_id=submission_id,
                         indicator_key=key,
                         score=final_score,
-                        ai_original_score=final_score,  # ✅ 保存 AI 原始分数
+                        ai_original_score=raw_scores.get(key, score),  # ✅ 保存 AI 原始百分制分数（0-100）
                         level=indicator_levels.get(key, "合格"),
                         comment=indicator_comments.get(key, "")
                     )
@@ -153,7 +156,7 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
                     if indicators:
                         indicator_details = "评分指标详情：\n"
                         indicator_names = {
-                            "A1": "问题拆解与检索目标设定",
+                            "A1": "检索目标拆解",
                             "A2": "检索策略设计",
                             "A3": "AI工具融合应用",
                             "A4": "检索策略优化",
@@ -165,7 +168,7 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
                             "C3": "风险处理方式",
                             "D1": "信息分类与组织",
                             "D2": "综合分析与决策",
-                            "D3": "局限认知与持续学习"
+                            "D3": "局限反思"
                         }
                         for ind in indicators:
                             name = indicator_names.get(ind.indicator_key, ind.indicator_key)
@@ -174,7 +177,8 @@ async def perform_scoring(submission_id: int, task_dict: dict, content: str, sub
             finally:
                 db.close()
             
-            report_data = generate_report(
+            report_data = await asyncio.to_thread(
+                generate_report,
                 task_title=task_dict.get("title", "法律检索任务"),
                 task_type=task_dict.get("task_type", "任务实践"),
                 dimension_scores=score_result.get("dimension_scores", {}),

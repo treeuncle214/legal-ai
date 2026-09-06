@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.api.deps import get_db, get_current_user, get_teacher_class_ids
-from backend.database.submissions import get_submission, update_ai_score_status
+from backend.database.submissions import get_submission, try_claim_scoring
 from backend.database.tasks import get_task as get_task_db
 from backend.api.submissions.scoring import perform_scoring
 
@@ -50,8 +50,9 @@ async def trigger_ai_score(
     if not content:
         content = f"【AI交互记录】\n{submission.get('ai_interaction_log', '')}\n\n【作业正文】\n{submission.get('final_output', '')}"
     
-    update_ai_score_status(submission_id, "scoring")
-    
+    if not try_claim_scoring(submission_id):
+        raise HTTPException(status_code=409, detail="该提交正在评分中，请稍后")
+
     asyncio.create_task(
         perform_scoring(
             submission_id=submission_id,

@@ -30,7 +30,6 @@ class User(Base):
         return {
             "id": self.id,
             "username": self.username,
-            "password": self.password,
             "role": self.role,
             "display_name": self.display_name or self.username,
             "college": self.college or "",      # 🆕

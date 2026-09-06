@@ -52,7 +52,8 @@ def get_published_submissions_for_student(student_username: str) -> List[Dict]:
                     else:
                         dimension_scores[key] = 0
 
-            total_score = sum(indicator_scores.values())
+            # 直接使用已保存的百分制总分，避免与维度得分口径不一致
+            total_score = s.total_score or 0
 
             evaluation_report = getattr(s, "evaluation_report", None)
             if evaluation_report and isinstance(evaluation_report, str):
@@ -91,10 +92,8 @@ def get_student_submissions_without_scores(student_username: str) -> List[Dict]:
             data = {c.name: getattr(s, c.name) for c in s.__table__.columns}
             data["task_title"] = task.title if task else None
 
-            scores = db.query(SubmissionScore).filter(
-                SubmissionScore.submission_id == s.id
-            ).all()
-            total_score = sum(sc.score for sc in scores)
+            # 直接使用已保存的百分制总分
+            total_score = s.total_score or 0
             data["total_score"] = round(total_score, 2) if total_score > 0 else None
 
             for dim in SCORING_DIMENSIONS:
@@ -163,6 +162,9 @@ def get_all_submissions_summary() -> List[Dict]:
             Submission.student_username,
             *avg_columns,
             func.count(Submission.id).label("task_count")
+        ).filter(
+            Submission.score_published == 1,
+            Submission.is_reviewed == 1
         ).group_by(Submission.student_username).order_by(Submission.student_username)
 
         rows = query.all()

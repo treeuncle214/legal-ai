@@ -56,6 +56,28 @@ def update_scores_v2(submission_id: int, scores: dict):
     return update_scores(submission_id, scores)
 
 
+def try_claim_scoring(submission_id: int) -> bool:
+    """原子地将提交置为 scoring，避免并发重复触发评分。返回是否成功占用。"""
+    from sqlalchemy import text
+    db = SessionLocal()
+    try:
+        result = db.execute(
+            text(
+                "UPDATE submissions SET ai_score_status='scoring' "
+                "WHERE id=:id AND (ai_score_status IS NULL OR ai_score_status != 'scoring')"
+            ),
+            {"id": submission_id},
+        )
+        db.commit()
+        return result.rowcount > 0
+    except Exception as e:
+        db.rollback()
+        logger.error(f"占用评分状态失败: {e}")
+        return False
+    finally:
+        db.close()
+
+
 def update_ai_score_status(
     submission_id: int, 
     status: str, 
@@ -142,11 +164,11 @@ def review_submission(submission_id: int, review_data: dict = None,
     
     db = SessionLocal()
     try:
-        submission = db.query(Submission).filter(Submission.id == submission_id).first()
+        submission = db.query(Submission).filter(Submission.id == submission_id).with_for_update().first()
         if not submission:
             logger.error(f"提交 {submission_id} 不存在")
             return
-        
+
         # ========== 1. 更新审批状态 ==========
         submission.is_reviewed = 1
         submission.reviewed_at = datetime.now()
@@ -267,15 +289,16 @@ def review_submission(submission_id: int, review_data: dict = None,
             setattr(submission, f"final_score_{key}", value)
             logger.info(f"✅ 保存 final_score_{key} = {value}")
         
-        # ========== 7. 计算并保存总分 ==========
-        # ✅ 总分 = 所有指标得分直接相加
-        total_score = 0
+        # ========== 7. 计算并保存总分（百分制） ==========
+        # 总分 = 启用指标得分之和 / 启用指标满分之和 × 100，与维度得分同口径
+        total_raw = 0.0
+        total_max = 0.0
         for key, score in indicator_score_dict.items():
-            # 只计算启用指标
             if not enabled_indicators or key in enabled_indicators:
-                total_score += score
-        
-        submission.total_score = round(total_score, 2)
+                total_raw += score or 0
+                total_max += indicator_max_scores.get(key, 10)
+
+        submission.total_score = round(total_raw / total_max * 100, 2) if total_max > 0 else 0.0
         logger.info(f"✅ 保存总分: {submission.total_score}")
         
         # ========== 8. 如果前端传了维度分数但没传指标分数（兼容旧版本） ==========

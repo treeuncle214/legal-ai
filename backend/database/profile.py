@@ -97,38 +97,51 @@ def calculate_profile(student_username: str) -> Dict:
                 scores_by_submission[score.submission_id] = {}
             scores_by_submission[score.submission_id][score.indicator_key] = score.score
         
-        # 统计任务类型
+        # 统计任务类型 + 预取任务（避免 N+1）
+        task_ids = [s.task_id for s in submissions]
+        tasks_map = {t.id: t for t in db.query(Task).filter(Task.id.in_(task_ids)).all()} if task_ids else {}
+
         task_type_count = {"课堂练习": 0, "任务实践": 0, "综合考察": 0}
         for sub in submissions:
-            task = db.query(Task).filter(Task.id == sub.task_id).first()
+            task = tasks_map.get(sub.task_id)
             task_type = task.task_type if task else "任务实践"
             if task_type in task_type_count:
                 task_type_count[task_type] += 1
-        
+
         # ✅ 关键修复：使用数据库中的 final_score_*（百分制）
         dim_all_scores = {dim["key"]: [] for dim in SCORING_DIMENSIONS}
-        
+
         for sub in submissions:
             for dim in SCORING_DIMENSIONS:
                 key = dim["key"]
                 final_score = getattr(sub, f"final_score_{key}", None)
                 ai_score = getattr(sub, f"score_{key}", 0)
-                
+
                 if final_score is not None and float(final_score) > 0:
                     dim_all_scores[key].append(float(final_score))
                 elif ai_score and float(ai_score) > 0:
                     dim_all_scores[key].append(float(ai_score))
-        
-        # 计算平均分
+
+        # 计算维度平均分（不加权，直接求平均）
         dim_avg = {}
         for dim in SCORING_DIMENSIONS:
             key = dim["key"]
             scores = dim_all_scores.get(key, [])
             dim_avg[key] = round(sum(scores) / len(scores), 2) if scores else 0
-        
-        # ✅ 使用 sub.total_score（百分制）
-        submission_scores = [sub.total_score for sub in submissions if sub.total_score and sub.total_score > 0]
-        overall = round(sum(submission_scores) / len(submission_scores), 2) if submission_scores else 0
+
+        # ✅ 学生总成绩（综合得分）= Σ(作业百分制得分 × 作业权重) / Σ(作业权重)（加权平均）
+        total_weighted = 0.0
+        total_weight = 0.0
+        for sub in submissions:
+            task = tasks_map.get(sub.task_id)
+            weight = task.weight if (task and task.weight) else 0
+            score = sub.total_score or 0
+            if score <= 0 or weight <= 0:
+                continue
+            total_weighted += score * weight
+            total_weight += weight
+
+        overall = round(total_weighted / total_weight, 2) if total_weight > 0 else 0
         
         overall_level = get_level(overall)
         

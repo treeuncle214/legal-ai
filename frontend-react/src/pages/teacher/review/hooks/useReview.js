@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { message } from 'antd';
-import { getTasks, getTaskReviews, reviewSubmission, publishScore, publishBatchScores, reScoreSubmission, unpublishSubmission, getClasses } from '@/api';
+import { getTasks, getTaskReviews, reviewSubmission, publishScore, publishBatchScores, reScoreSubmission, unpublishSubmission, getClasses, triggerAIScore } from '@/api';
 import { getDimensions } from '@/api';
 
 export const useReview = () => {
@@ -139,6 +139,18 @@ export const useReview = () => {
         }
     }, [selectedTaskId, fetchSubmissions]);
 
+    const handleTriggerAI = useCallback(async (submissionId) => {
+        try {
+            await triggerAIScore(submissionId);
+            message.success('已触发AI评分');
+            await fetchSubmissions(selectedTaskId);
+            return true;
+        } catch (error) {
+            message.error(error.response?.data?.detail || '触发AI评分失败');
+            return false;
+        }
+    }, [selectedTaskId, fetchSubmissions]);
+
     const handleUnpublish = useCallback(async (submissionId) => {
         try {
             await unpublishSubmission(submissionId);
@@ -242,6 +254,7 @@ export const useReview = () => {
         handlePublish,
         handleBatchPublish,
         handleReScore,
+        handleTriggerAI,
         handleUnpublish,
         openWordDocument
     };

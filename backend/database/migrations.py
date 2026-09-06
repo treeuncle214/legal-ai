@@ -71,8 +71,8 @@ def ensure_submission_columns():
     _add_column("submissions", "ai_score_error", "TEXT")
     _add_column("submissions", "ai_score_detail", "TEXT")
     
-    # AI 评分控制字段
-    _add_column("submissions", "ai_scored", "BOOLEAN", "0")
+    # AI 评分控制字段（用 INTEGER 而非 BOOLEAN，兼容 SQLite 与 PostgreSQL）
+    _add_column("submissions", "ai_scored", "INTEGER", "0")
     _add_column("submissions", "ai_scored_at", "TIMESTAMP")
     _add_column("submissions", "ai_scored_by", "VARCHAR(50)")
     
@@ -179,8 +179,12 @@ def init_db():
     
     # 迁移旧数据
     migrate_old_score_columns()
-    
-    # 创建默认账号
+
+    # 创建默认账号（仅开发/测试环境；生产环境由管理员手工创建账号）
+    if os.getenv("ENVIRONMENT", "development") == "production":
+        print("⚠️ 生产环境：跳过默认账号/测试账号创建")
+        return
+
     db = SessionLocal()
     try:
         from backend.core.auth import get_password_hash

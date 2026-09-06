@@ -1,14 +1,14 @@
 """
 维度得分计算器
 """
-from typing import Dict, List, Optional
+from typing import Dict, List
 
-# 维度配置 - 仅用于定义指标归属和权重
+# 维度配置 - 仅用于定义指标归属（评分不依赖维度权重）
 SCORING_DIMENSIONS = {
-    "ai_retrieval": {"name": "AI融合智能检索能力", "weight": 0.30, "indicators": ["A1", "A2", "A3", "A4"]},
-    "critical": {"name": "批判性评估能力", "weight": 0.20, "indicators": ["B1", "B2", "B3"]},
-    "ethics": {"name": "伦理合规辨识能力", "weight": 0.20, "indicators": ["C1", "C2", "C3"]},
-    "integration": {"name": "信息整合应用能力", "weight": 0.30, "indicators": ["D1", "D2", "D3"]}
+    "ai_retrieval": {"name": "AI融合智能检索能力", "indicators": ["A1", "A2", "A3", "A4"]},
+    "critical": {"name": "批判性评估能力", "indicators": ["B1", "B2", "B3"]},
+    "ethics": {"name": "伦理合规辨识能力", "indicators": ["C1", "C2", "C3"]},
+    "integration": {"name": "信息整合应用能力", "indicators": ["D1", "D2", "D3"]}
 }
 
 
@@ -77,29 +77,3 @@ def calculate_dimension_levels(dimension_scores: Dict[str, float]) -> Dict[str, 
     """计算维度等级"""
     from .grade_mapper import score_to_level
     return {dim: score_to_level(score) for dim, score in dimension_scores.items()}
-
-
-def calculate_total_score(
-    dimension_scores: Dict[str, float],
-    weights: Dict[str, float] = None
-) -> float:
-    """
-    计算加权总分
-    只对已评分的维度加权，未评分的维度不参与计算
-    """
-    if weights is None:
-        weights = {dim: info["weight"] for dim, info in SCORING_DIMENSIONS.items()}
-    
-    total = 0.0
-    total_weight = 0.0
-    
-    for dim_key, score in dimension_scores.items():
-        # 只计算有分数（>0）的维度
-        if score > 0:
-            weight = weights.get(dim_key, 0)
-            total += score * weight
-            total_weight += weight
-    
-    if total_weight > 0:
-        return round(total / total_weight, 2)
-    return 0.0

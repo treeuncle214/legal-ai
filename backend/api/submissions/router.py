@@ -78,7 +78,10 @@ async def submit_text(
             raise HTTPException(status_code=400, detail=check_message)
         
         content = submission_data.final_output
-        score_result = score_submission(task_dict, {"final_output": content, "submit_type": "text"})
+        # ✅ 同步 AI 调用放到线程池执行，避免阻塞事件循环（100+ 并发下不卡死）
+        score_result = await asyncio.to_thread(
+            score_submission, task_dict, {"final_output": content, "submit_type": "text"}
+        )
         submission_id = add_submission(
             task_id=submission_data.task_id,
             student_username=current_user["username"],
@@ -98,7 +101,7 @@ async def submit_text(
             "score_ethics": score_result["dimension_scores"].get("ethics", 0),
             "score_integration": score_result["dimension_scores"].get("integration", 0),
             "ai_comment": score_result.get("comment", "AI评分完成"),
-            "ai_score_detail": str(score_result.get("indicator_grades", {})) if "indicator_grades" in score_result else str(score_result.get("module_scores", {}))
+            "ai_score_detail": str(score_result.get("indicator_grades", {}))
         }
         update_scores(submission_id, scores_dict)
         submission_count = get_submission_count(current_user["username"], submission_data.task_id)

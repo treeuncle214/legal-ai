@@ -7,10 +7,8 @@ from typing import Dict
 
 from .clients.deepseek_client import call_deepseek_api_json
 from .prompts.exercise_prompt import build_exercise_prompt
-from .prompts.final_report_prompt import build_final_report_prompt
 from .parsers.indicator_parser import parse_indicator_scores, get_all_indicators
-from .parsers.module_parser import parse_module_scores
-from .calculators.dimension_calculator import calculate_dimension_scores, calculate_total_score
+from .calculators.dimension_calculator import calculate_dimension_scores
 from .calculators.grade_mapper import score_to_level
 
 logger = logging.getLogger(__name__)
@@ -90,14 +88,11 @@ def score_exercise(task: Dict, submission: Dict) -> Dict:
     # 解析指标评分（AI返回0-100分）
     parsed = parse_indicator_scores(response)
     
-    # 计算各指标实际得分（按满分折算 + 截断确保不超出满分）
+    # 计算各指标实际得分：AI 返回 0-100，按各指标满分折算（score/100 × max_score）
     final_indicator_scores = {}
     for key, score in parsed["indicator_scores"].items():
         max_score = indicator_max_scores.get(key, 10)
-        raw_score = round(score / 100 * max_score, 2)
-        print(f"🔍 指标 {key}: AI评分={score}, max_score={max_score}, raw_score={raw_score}")
-        final_indicator_scores[key] = max(0.0, min(raw_score, float(max_score)))
-        print(f"🔍 指标 {key}: 最终得分={final_indicator_scores[key]}")
+        final_indicator_scores[key] = round(score / 100 * max_score, 2)
     
     # 使用 dimension_calculator 的 calculate_dimension_scores 函数
     dimension_scores = calculate_dimension_scores(
@@ -108,8 +103,10 @@ def score_exercise(task: Dict, submission: Dict) -> Dict:
     
     dimension_levels = {dim: score_to_level(score) for dim, score in dimension_scores.items()}
     
-    # 计算作业总分 = 所有指标得分直接相加
-    total_score = sum(final_indicator_scores.values())
+    # 计算作业总分 = 所有指标得分之和 / 满分之和 × 100（百分制，与维度得分同口径）
+    total_raw = sum(final_indicator_scores.values())
+    total_max = sum(indicator_max_scores.get(k, 10) for k in final_indicator_scores)
+    total_score = round(total_raw / total_max * 100, 2) if total_max > 0 else 0.0
     
     # 指标等级
     indicator_grades = {}
@@ -133,46 +130,6 @@ def score_exercise(task: Dict, submission: Dict) -> Dict:
             "enabled_indicators": enabled_indicators,
             "prompt_type": "exercise"
         }
-    }
-
-
-def score_final_report(task: Dict, content: str) -> Dict:
-    """对期末报告进行AI评分"""
-    prompt = build_final_report_prompt(task, content)
-    response = call_deepseek_api_json(prompt)
-    
-    if response is None:
-        return generate_fallback_report_score(task, content)
-    
-    module_scores = response.get("module_scores", {})
-    module_comments = response.get("module_comments", {})
-    
-    mapping = {
-        "ai_retrieval": ["问题界定与关键词提取", "AI工具使用与策略优化"],
-        "critical": ["信息源评估与筛选"],
-        "ethics": ["伦理合规与学术诚信"],
-        "integration": ["信息整合与结构化", "法律分析与推理", "结论与建议"]
-    }
-    
-    dimension_scores = {}
-    for dim_key, modules in mapping.items():
-        scores = [module_scores.get(module, 0) for module in modules]
-        if scores:
-            dimension_scores[dim_key] = round(sum(scores) / len(scores), 2)
-        else:
-            dimension_scores[dim_key] = 60.0
-    
-    dimension_levels = {dim: score_to_level(score) for dim, score in dimension_scores.items()}
-    total_score = calculate_total_score(dimension_scores)
-    
-    return {
-        "module_scores": module_scores,
-        "module_comments": module_comments,
-        "dimension_scores": dimension_scores,
-        "dimension_levels": dimension_levels,
-        "ai_comment": response.get("comment", "评分完成"),
-        "total_score": total_score,
-        "metadata": {"prompt_type": "final_report"}
     }
 
 
@@ -224,7 +181,9 @@ def generate_fallback_score(task: Dict, submission: Dict, indicator_max_scores: 
         else:
             dimension_scores[key] = 0.0
     
-    total_score = sum(indicator_scores.values())
+    total_raw = sum(indicator_scores.values())
+    total_max = sum(indicator_max_scores.get(k, 10) for k in indicator_scores)
+    total_score = round(total_raw / total_max * 100, 2) if total_max > 0 else 0.0
     
     return {
         "indicator_grades": {k: score_to_level((v / indicator_max_scores.get(k, 10)) * 100) for k, v in indicator_scores.items()},
@@ -240,53 +199,9 @@ def generate_fallback_score(task: Dict, submission: Dict, indicator_max_scores: 
     }
 
 
-def generate_fallback_report_score(task: Dict, content: str) -> Dict:
-    """生成期末报告降级评分"""
-    import random
-    modules = ["问题界定与关键词提取", "AI工具使用与策略优化", "信息源评估与筛选",
-               "伦理合规与学术诚信", "信息整合与结构化", "法律分析与推理", "结论与建议"]
-    
-    module_scores = {module: random.randint(60, 90) for module in modules}
-    
-    mapping = {
-        "ai_retrieval": ["问题界定与关键词提取", "AI工具使用与策略优化"],
-        "critical": ["信息源评估与筛选"],
-        "ethics": ["伦理合规与学术诚信"],
-        "integration": ["信息整合与结构化", "法律分析与推理", "结论与建议"]
-    }
-    
-    dimension_scores = {}
-    for dim_key, modules in mapping.items():
-        scores = [module_scores.get(module, 0) for module in modules]
-        if scores:
-            dimension_scores[dim_key] = round(sum(scores) / len(scores), 2)
-        else:
-            dimension_scores[dim_key] = 60.0
-    
-    total_score = calculate_total_score(dimension_scores)
-    
-    return {
-        "module_scores": module_scores,
-        "module_comments": {k: f"{v}分 (临时评分)" for k, v in module_scores.items()},
-        "dimension_scores": dimension_scores,
-        "dimension_levels": {dim: score_to_level(score) for dim, score in dimension_scores.items()},
-        "ai_comment": "⚠️ AI评分服务暂时不可用，当前为模拟评分，请教师重新审批。",
-        "total_score": total_score,
-        "metadata": {"prompt_type": "fallback_report"}
-    }
-
-
 def score_submission(task: Dict, submission: Dict) -> Dict:
-    """统一的评分入口"""
-    task_type = task.get("task_type", "课堂练习")
-    
-    if task_type == "期末考察":
-        content = submission.get("final_output", "")
-        if submission.get("submit_type") == "word":
-            content = submission.get("content", content)
-        return score_final_report(task, content)
-    else:
-        return score_exercise(task, submission)
+    """统一的评分入口：课堂练习 / 任务实践 / 期末考察 均使用 13 指标评分"""
+    return score_exercise(task, submission)
 
 
 def test_api():

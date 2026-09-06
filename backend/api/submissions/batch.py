@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from backend.api.deps import get_db, get_current_user, get_teacher_class_ids
 from backend.database import get_submissions_by_task_all
-from backend.database.submissions import update_ai_score_status
+from backend.database.submissions import try_claim_scoring
 from backend.database.tasks import get_task as get_task_db
 from backend.api.submissions.scoring import perform_scoring
 
@@ -157,8 +157,10 @@ async def process_batch_scoring(
             if not content:
                 content = f"【AI交互记录】\n{submission.get('ai_interaction_log', '')}\n\n【作业正文】\n{submission.get('final_output', '')}"
             
-            update_ai_score_status(submission["id"], "scoring")
-            
+            if not try_claim_scoring(submission["id"]):
+                _batch_progress_cache[task_id]["details"][index]["status"] = "skipped"
+                return {"submission_id": submission["id"], "status": "skipped", "reason": "评分中", "username": username, "name": name}
+
             async with semaphore:
                 await asyncio.sleep(0.5)
                 await perform_scoring(
@@ -177,32 +179,31 @@ async def process_batch_scoring(
             _batch_progress_cache[task_id]["details"][index]["status"] = "failed"
             return {"submission_id": submission.get("id"), "status": "failed", "error": str(e), "username": username, "name": name}
     
-    # 创建所有任务
+    # 并发执行所有评分任务（由 semaphore 限制并发数，避免串行阻塞）
     tasks = [score_one(sub, idx) for idx, sub in enumerate(submissions)]
-    
-    # 逐个执行并更新进度
-    for idx, task in enumerate(tasks):
-        result = await task
-        # 更新进度缓存
-        cache = _batch_progress_cache.get(task_id, {})
-        if result.get("status") == "success":
-            cache["success"] = cache.get("success", 0) + 1
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # 汇总进度
+    cache = _batch_progress_cache.get(task_id, {})
+    success = failed = skipped = 0
+    for idx, result in enumerate(results):
+        if isinstance(result, Exception):
+            cache["details"][idx]["status"] = "failed"
+            failed += 1
+        elif result.get("status") == "success":
+            success += 1
         elif result.get("status") == "failed":
-            cache["failed"] = cache.get("failed", 0) + 1
+            failed += 1
         elif result.get("status") == "skipped":
-            cache["skipped"] = cache.get("skipped", 0) + 1
-        cache["completed"] = idx + 1
-        cache["current_processing"] = None
-        
-        # 计算预计剩余时间
-        elapsed = time.time() - cache.get("start_time", time.time())
-        if idx + 1 > 0:
-            avg_time_per_item = elapsed / (idx + 1)
-            remaining = total - (idx + 1)
-            cache["estimated_remaining_seconds"] = int(avg_time_per_item * remaining)
-            cache["elapsed_seconds"] = int(elapsed)
-        
-        _batch_progress_cache[task_id] = cache
+            skipped += 1
+    cache["success"] = success
+    cache["failed"] = failed
+    cache["skipped"] = skipped
+    cache["completed"] = total
+    cache["current_processing"] = None
+    cache["elapsed_seconds"] = int(time.time() - cache.get("start_time", time.time()))
+    cache["estimated_remaining_seconds"] = 0
+    _batch_progress_cache[task_id] = cache
     
     # 完成
     cache = _batch_progress_cache.get(task_id, {})

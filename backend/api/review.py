@@ -2,6 +2,7 @@
 教师审批 API
 """
 
+import asyncio
 import logging
 import json
 from datetime import datetime
@@ -16,7 +17,7 @@ from backend.database import review_submission, get_submission
 from backend.database.models import Submission, SubmissionScore, TaskRubric, TaskRubricIndicator, User
 from backend.database.submissions import publish_submission_score
 from backend.database.submissions import get_submissions_by_task_all
-from backend.database.submissions.scoring import save_evaluation_report, get_evaluation_report, update_ai_score_status
+from backend.database.submissions.scoring import save_evaluation_report, get_evaluation_report, try_claim_scoring
 from backend.database.tasks import get_task as get_task_db
 from backend.database.engine import SessionLocal
 from backend.config import SCORING_DIMENSIONS
@@ -270,13 +271,26 @@ async def get_task_reviews(
             for ind in indicators:
                 max_scores[ind.indicator_key] = ind.max_score
 
-        for sub in submissions:
-            student_user = db_session.query(User).filter(User.username == sub["student_username"]).first()
-            sub["student_name"] = student_user.display_name if student_user else sub["student_username"]
+        # 批量预取学生信息与指标分数，避免 N+1 查询
+        usernames = {sub["student_username"] for sub in submissions if sub.get("student_username")}
+        submission_ids = [sub["id"] for sub in submissions]
 
-            scores = db_session.query(SubmissionScore).filter(
-                SubmissionScore.submission_id == sub["id"]
-            ).all()
+        user_map = {
+            u.username: u.display_name
+            for u in db_session.query(User).filter(User.username.in_(usernames)).all()
+        } if usernames else {}
+
+        score_rows = db_session.query(SubmissionScore).filter(
+            SubmissionScore.submission_id.in_(submission_ids)
+        ).all() if submission_ids else []
+        scores_by_submission = {}
+        for s in score_rows:
+            scores_by_submission.setdefault(s.submission_id, []).append(s)
+
+        for sub in submissions:
+            sub["student_name"] = user_map.get(sub["student_username"], sub["student_username"])
+
+            scores = scores_by_submission.get(sub["id"], [])
 
             indicator_scores = {}
             indicator_levels = {}
@@ -400,7 +414,8 @@ async def generate_report_api(
     finally:
         db_local.close()
 
-    report_data = generate_report(
+    report_data = await asyncio.to_thread(
+        generate_report,
         task_title=task.get("title", "法律检索任务"),
         task_type=task.get("task_type", "任务实践"),
         dimension_scores=dimension_scores,
@@ -624,7 +639,8 @@ async def re_score_submission(
     finally:
         db_local.close()
 
-    update_ai_score_status(submission_id, "scoring")
+    if not try_claim_scoring(submission_id):
+        raise HTTPException(status_code=409, detail="该提交正在评分中，请稍后")
 
     asyncio.create_task(
         perform_scoring(

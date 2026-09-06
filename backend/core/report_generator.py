@@ -223,7 +223,7 @@ def generate_fallback_overall(task_title: str, dimension_scores: Dict[str, float
 def generate_fallback_issues(indicator_scores: Dict[str, float]) -> List[Dict]:
     """生成备用问题列表 - 4个"""
     indicator_names = {
-        "A1": "问题拆解与检索目标设定",
+        "A1": "检索目标拆解",
         "A2": "检索策略设计",
         "A3": "AI工具融合应用",
         "A4": "检索策略优化",
@@ -235,7 +235,7 @@ def generate_fallback_issues(indicator_scores: Dict[str, float]) -> List[Dict]:
         "C3": "风险处理方式",
         "D1": "信息分类与组织",
         "D2": "综合分析与决策",
-        "D3": "局限认知与持续学习"
+        "D3": "局限反思"
     }
     
     sorted_scores = sorted(indicator_scores.items(), key=lambda x: x[1])

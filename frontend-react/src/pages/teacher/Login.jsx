@@ -79,9 +79,6 @@ export default function TeacherLogin({ onLoginSuccess }) {
                         </Button>
                     </Form.Item>
                 </Form>
-                <p style={{ textAlign: 'center', color: '#999', fontSize: 12 }}>
-                    测试账号：admin / admin123
-                </p>
             </Card>
         </div>
     );

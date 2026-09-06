@@ -25,6 +25,7 @@ export default function TeacherReview() {
         handlePublish,
         handleBatchPublish,
         handleReScore,
+        handleTriggerAI,
         handleUnpublish,
         openWordDocument
     } = useReview();
@@ -97,6 +98,7 @@ export default function TeacherReview() {
                 onReview={handleReview}
                 onPublish={handlePublish}
                 onReScore={handleReScore}  // ✅ 传递重新评分
+                onTriggerAI={handleTriggerAI}  // ✅ 传递单个AI评分
                 onOpenWord={openWordDocument}
             />
 

@@ -8,7 +8,6 @@ from .dimension_calculator import (
     SCORING_DIMENSIONS,
     calculate_dimension_scores,
     calculate_dimension_levels,
-    calculate_total_score,
 )
 
 __all__ = [
@@ -19,5 +18,4 @@ __all__ = [
     "SCORING_DIMENSIONS",
     "calculate_dimension_scores",
     "calculate_dimension_levels",
-    "calculate_total_score",
 ]

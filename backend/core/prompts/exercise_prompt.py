@@ -28,10 +28,12 @@ def build_exercise_prompt(
     description_lines = task_description.split('\n')
     formatted_description = '\n'.join([f"  {line}" if line.strip() else "" for line in description_lines])
     
-    # 获取提交内容
+    # 获取提交内容（word 提交的正文在 word_content，作为最终输出）
     process_log = submission.get("process_log", "无记录")
     ai_interaction_log = submission.get("ai_interaction_log", "无记录")
     final_output = submission.get("final_output", "无内容")
+    if submission.get("submit_type") == "word" and submission.get("word_content"):
+        final_output = submission.get("word_content")
     
     # 构建启用指标列表
     indicator_list = []
@@ -41,7 +43,7 @@ def build_exercise_prompt(
         prompt = ""
         if indicator_prompts and key in indicator_prompts:
             prompt = f"\n   评分关注点：{indicator_prompts[key]}"
-        indicator_list.append(f"  - {key} {name}（满分 {max_score} 分）{prompt}")
+        indicator_list.append(f"  - {key} {name}（满分 {max_score} 分，请按百分制返回 0-100 分）{prompt}")
     
     indicators_text = "\n".join(indicator_list) if indicator_list else "  全部13个指标"
     
@@ -52,7 +54,7 @@ def build_exercise_prompt(
     prompt = f"""你是一位专业的法律信息检索课程评分教师。请根据以下评分标准，对学生提交的内容进行逐项评分。
 
 ## 评分规则（重要）
-1. **每个指标必须给出0-100的具体分数**（不要只给等级）
+1. **每个指标必须给出0-100的百分制分数**（不要只给等级；后端会按该指标满分自动折算，如满分14分时 50分→7.0分）
 2. **分数要有区分度**，不要集中在60分附近，要根据实际表现拉开差距
 3. **每个指标必须给出具体评语**，指出优点和不足
 4. 评语要个性化、有针对性，不要使用模板化语言

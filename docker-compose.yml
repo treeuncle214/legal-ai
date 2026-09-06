@@ -43,7 +43,8 @@ services:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
       - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-chat}
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - SECRET_KEY=${SECRET_KEY:?请在 .env 中设置 SECRET_KEY}
+      - REFRESH_SECRET_KEY=${REFRESH_SECRET_KEY:?请在 .env 中设置 REFRESH_SECRET_KEY}
       - ACCESS_TOKEN_EXPIRE_MINUTES=1440
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost}
     depends_on:

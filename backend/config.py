@@ -4,9 +4,8 @@
 
 评分体系：
 - 4大一级维度（核心能力）
-- 14个二级指标（可观测的能力点）
-- 期末报告按8模块/100分制评分，自动映射到4维度
-- 平时练习按启用指标评A/B/C/D等级
+- 13个二级指标（可观测的能力点）
+- 所有作业类型（课堂练习/任务实践/期末考察）统一按13指标评分
 """
 
 import os
@@ -15,6 +14,12 @@ from dotenv import load_dotenv
 
 # 加载环境变量
 load_dotenv()
+
+# 运行环境：development / testing / production
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
+# 日志级别（DEBUG / INFO / WARNING / ERROR）
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 # ========== 路径配置（支持环境变量，方便部署） ==========
 
@@ -174,19 +179,6 @@ def get_indicator_to_dimension_map():
     return mapping
 
 
-def get_final_report_module_mapping():
-    """期末报告8模块映射"""
-    return [
-        {"module": "问题拆解与检索目标", "max_score": 10, "dimension_key": "ai_retrieval"},
-        {"module": "检索策略与过程记录", "max_score": 20, "dimension_key": "ai_retrieval"},
-        {"module": "信息批判性评估",     "max_score": 15, "dimension_key": "critical"},
-        {"module": "伦理与合规分析",     "max_score": 15, "dimension_key": "ethics"},
-        {"module": "检索结果分类呈现",   "max_score": 10, "dimension_key": "integration"},
-        {"module": "综合分析与结论",     "max_score": 15, "dimension_key": "integration"},
-        {"module": "检索局限性与自我评价","max_score": 5,  "dimension_key": "integration"},
-        {"module": "报告整体质量与附件", "max_score": 10, "dimension_key": "integration"},
-    ]
-
 def get_level_by_score(score: float) -> str:
     """根据分数获取等级"""
     if score >= 85:
@@ -209,11 +201,12 @@ AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", 60))
 
 # ========== 数据库配置 ==========
 # 支持 SQLite（开发）和 PostgreSQL（生产）
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH}")
+# 单一来源：engine.py 从这里读取，避免 config 与 engine 各自计算导致路径不一致
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/assessment.db")
 
 # ========== 应用信息 ==========
 APP_NAME = "法律信息智能检索 - AI能力测评系统"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.1.0"
 
 # ========== 安全配置 ==========
 # JWT 密钥（生产环境必须修改）
@@ -222,6 +215,14 @@ REFRESH_SECRET_KEY = os.getenv("REFRESH_SECRET_KEY", "your-refresh-secret-key-ch
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60 * 24))  # 默认24小时
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7))
+
+# 生产环境安全检查：禁止使用默认密钥
+if ENVIRONMENT == "production":
+    if SECRET_KEY in ("", "your-secret-key-change-in-production") or \
+            REFRESH_SECRET_KEY in ("", "your-refresh-secret-key-change-in-production"):
+        raise RuntimeError(
+            "生产环境必须通过环境变量设置安全的 SECRET_KEY 与 REFRESH_SECRET_KEY"
+        )
 
 # ========== CORS 配置 ==========
 # 允许的跨域来源（生产环境设置具体域名）

@@ -2,15 +2,12 @@
 数据库引擎和会话管理
 """
 
-import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import NullPool
-from dotenv import load_dotenv
 
-load_dotenv()
-
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/assessment.db")
+# 单一来源：数据库地址统一从 config 读取（config 内部已 load_dotenv）
+from backend.config import DATABASE_URL
 
 IS_POSTGRESQL = DATABASE_URL.startswith("postgresql")
 

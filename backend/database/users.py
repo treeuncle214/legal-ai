@@ -6,6 +6,7 @@
 from sqlalchemy.orm import Session
 from backend.database.engine import SessionLocal
 from backend.database.models import User
+from backend.core.auth import get_password_hash
 
 
 def add_user(username, password, role="student", display_name=None, college="", major=""):
@@ -13,7 +14,7 @@ def add_user(username, password, role="student", display_name=None, college="", 
     try:
         user = User(
             username=username,
-            password=password,
+            password=get_password_hash(password),
             role=role,
             display_name=display_name or username,
             college=college or "",  # ✅ 新增

@@ -62,12 +62,16 @@ export const calculateDimensionScore = (indicators, indicatorScores) => {
 };
 
 /**
- * 计算作业总分（所有指标直接相加）
+ * 计算作业总分（百分制：指标得分之和 ÷ 指标满分之和 × 100）
+ * 默认每个指标满分 10 分
  * @param {Object} indicatorScores - 指标得分字典 { A1: 8.5, A2: 8.0, ... }
- * @returns {number} 作业总分
+ * @returns {number} 作业总分（百分制）
  */
 export const calculateTotalScore = (indicatorScores) => {
-    return Object.values(indicatorScores).reduce((sum, s) => sum + (s || 0), 0);
+    const values = Object.values(indicatorScores || {});
+    const total = values.reduce((sum, s) => sum + (s || 0), 0);
+    const max = values.length * 10;
+    return max > 0 ? Math.round((total / max) * 10000) / 100 : 0;
 };
 
 /**

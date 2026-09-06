@@ -71,9 +71,6 @@ export default function StudentLogin({ onLoginSuccess }) {
                         </Button>
                     </Form.Item>
                 </Form>
-                <p style={{ textAlign: 'center', color: '#999', fontSize: 12 }}>
-                    测试账号：2024001 / 123456
-                </p>
             </Card>
         </div>
     );

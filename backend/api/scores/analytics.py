@@ -108,7 +108,8 @@ def get_class_analytics_data(
                 else:
                     dimension_scores[key] = 0
             
-            total = sum(indicator_dict.values())
+            # 直接使用已保存的百分制总分
+            total = sub.total_score or 0
             
             all_published_scores.append({
                 "student_username": sub.student_username,

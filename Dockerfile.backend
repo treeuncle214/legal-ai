@@ -28,6 +28,8 @@ RUN pip install --upgrade openai gunicorn
 
 # ========== 复制代码 ==========
 COPY backend/ ./backend/
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
 
 # ========== 创建数据目录 ==========
 RUN mkdir -p /app/data/uploads /app/data/exports /app/data/temp /app/logs
@@ -35,15 +37,16 @@ RUN mkdir -p /app/data/uploads /app/data/exports /app/data/temp /app/logs
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# ✅ 优化 Gunicorn 配置（支持100+并发）
-CMD ["gunicorn", "backend.main:app", \
-     "--workers", "4", \
-     "--worker-class", "uvicorn.workers.UvicornWorker", \
-     "--bind", "0.0.0.0:8000", \
-     "--timeout", "300", \
-     "--graceful-timeout", "30", \
-     "--keep-alive", "5", \
-     "--max-requests", "1000", \
-     "--max-requests-jitter", "100", \
-     "--access-logfile", "-", \
-     "--error-logfile", "-"]
+# ✅ 先执行 Alembic 迁移，再启动 Gunicorn（支持100+并发）
+#    exec 让 Gunicorn 成为 PID 1，正确接收 SIGTERM 信号
+CMD ["sh", "-c", "alembic upgrade head && exec gunicorn backend.main:app \
+     --workers 4 \
+     --worker-class uvicorn.workers.UvicornWorker \
+     --bind 0.0.0.0:8000 \
+     --timeout 300 \
+     --graceful-timeout 30 \
+     --keep-alive 5 \
+     --max-requests 1000 \
+     --max-requests-jitter 100 \
+     --access-logfile - \
+     --error-logfile -"]

@@ -110,13 +110,15 @@ export const ReviewModal = ({
             }
         });
 
-        let totalScore = 0;
+        let totalRaw = 0;
+        let totalMax = 0;
         Object.keys(allIndicatorScores).forEach(key => {
             if (enabledIndicators.length === 0 || enabledIndicators.includes(key)) {
-                totalScore += allIndicatorScores[key] || 0;
+                totalRaw += allIndicatorScores[key] || 0;
+                totalMax += indicatorMaxScores[key] || 10;
             }
         });
-        totalScore = Math.round(totalScore * 100) / 100;
+        const totalScore = totalMax > 0 ? Math.round((totalRaw / totalMax) * 10000) / 100 : 0;
 
         return { dimensionScores, totalScore };
     }, [scores, submission, dimensions]);
