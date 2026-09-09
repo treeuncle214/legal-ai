@@ -170,6 +170,7 @@ export default function ClassDetail() {
                     loading={loading}
                     pagination={{ pageSize: 20 }}
                     locale={{ emptyText: '暂无学生，请添加学生' }}
+                    scroll={{ x: 'max-content' }}
                 />
             </Card>
 

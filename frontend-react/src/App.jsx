@@ -32,7 +32,6 @@ import {
   UserOutlined,
   CheckCircleOutlined,
   BarChartOutlined,
-  IdcardOutlined,
   TrophyOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
@@ -119,7 +118,6 @@ function TeacherLayout() {
     { key: '/teacher/classes', icon: <TeamOutlined />, label: '班级管理' },
     { key: '/teacher/review', icon: <CheckCircleOutlined />, label: '审批评分' },
     { key: '/teacher/scores', icon: <BarChartOutlined />, label: '成绩总览' },
-    { key: '/teacher/profile', icon: <IdcardOutlined />, label: '学生画像' },
   ];
 
   const menuItems = isAdmin
@@ -129,7 +127,6 @@ function TeacherLayout() {
       { key: '/teacher/users', icon: <UserOutlined />, label: '用户管理' },
       baseMenuItems[2],
       baseMenuItems[3],
-      baseMenuItems[4],
     ]
     : baseMenuItems;
 

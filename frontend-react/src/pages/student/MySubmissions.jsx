@@ -151,6 +151,7 @@ export default function MySubmissions() {
                     loading={loading}
                     pagination={{ pageSize: 10 }}
                     locale={{ emptyText: '暂无提交记录，请先提交作业' }}
+                    scroll={{ x: 'max-content' }}
                 />
             </Card>
 
@@ -159,11 +160,11 @@ export default function MySubmissions() {
                 open={modalOpen}
                 onCancel={() => setModalOpen(false)}
                 footer={[<Button key="close" onClick={() => setModalOpen(false)}>关闭</Button>]}
-                width={800}
+                width="min(800px, 95vw)"
             >
                 {currentSubmission && (
                     <div style={{ maxHeight: '70vh', overflow: 'auto', paddingRight: 8 }}>
-                        <Descriptions column={2} bordered size="small" style={{ marginBottom: 16 }}>
+                        <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small" style={{ marginBottom: 16 }}>
                             <Descriptions.Item label="任务名称" span={2}>{currentSubmission.task_title}</Descriptions.Item>
                             <Descriptions.Item label="提交时间">
                                 {currentSubmission.submit_time?.replace('T', ' ').substring(0, 19)}
@@ -281,7 +282,7 @@ export default function MySubmissions() {
                         {currentSubmission.indicator_scores && Object.keys(currentSubmission.indicator_scores).length > 0 && (
                             <>
                                 <h4 style={{ marginTop: 16 }}>指标评分详情</h4>
-                                <Descriptions column={2} bordered size="small" style={{ marginBottom: 16 }}>
+                                <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small" style={{ marginBottom: 16 }}>
                                     {Object.entries(currentSubmission.indicator_scores).map(([key, score]) => (
                                         <Descriptions.Item key={key} label={key}>
                                             <span style={{ fontWeight: 'bold' }}>

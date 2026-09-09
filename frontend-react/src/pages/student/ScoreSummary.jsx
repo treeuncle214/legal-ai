@@ -321,7 +321,7 @@ export default function ScoreSummary() {
                         关闭
                     </Button>
                 ]}
-                width={750}
+                width="min(750px, 95vw)"
             >
                 <div style={{ marginBottom: 16 }}>
                     <Title level={4}>{selectedScore.task_title || '未知任务'}</Title>
@@ -439,6 +439,7 @@ export default function ScoreSummary() {
                             dataSource={scores}
                             rowKey="id"
                             pagination={{ pageSize: 10 }}
+                            scroll={{ x: 'max-content' }}
                             summary={(pageData) => {
                                 const validScores = pageData.filter(item => item.total_score && item.total_score > 0);
                                 if (validScores.length === 0) {

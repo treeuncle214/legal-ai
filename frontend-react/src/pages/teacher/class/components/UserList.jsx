@@ -82,6 +82,7 @@ export function UserList({ data, loading, onDelete }) {
             rowKey="id"
             loading={loading}
             pagination={{ pageSize: 20 }}
+            scroll={{ x: 'max-content' }}
             locale={{ emptyText: '暂无用户' }}
         />
     );

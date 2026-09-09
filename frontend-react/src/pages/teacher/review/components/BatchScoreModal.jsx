@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Modal, Checkbox, Button, Space, Tag, Alert, message, Progress, Row, Col, Statistic, List, Avatar } from 'antd';
 import { ThunderboltOutlined, LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, UserOutlined } from '@ant-design/icons';
 import { triggerBatchAIScore, getBatchProgress } from '../../../../api';
 
-const BatchScoreModal = ({ visible, onClose, taskId, submissions, onSuccess }) => {
+const BatchScoreModal = ({ visible, onClose, taskId, submissions, onSuccess, onComplete }) => {
     const [loading, setLoading] = useState(false);
     const [forceRetry, setForceRetry] = useState(false);
     const [progressVisible, setProgressVisible] = useState(false);
     const [progress, setProgress] = useState(null);
-    const [pollingInterval, setPollingInterval] = useState(null);
+    const pollingRef = useRef(null);
+    const completedRef = useRef(false);
 
     // 获取待评分的提交
     const pendingSubmissions = submissions.filter(s =>
@@ -52,12 +53,12 @@ const BatchScoreModal = ({ visible, onClose, taskId, submissions, onSuccess }) =
     };
 
     const startPolling = () => {
-        if (pollingInterval) {
-            clearInterval(pollingInterval);
+        if (pollingRef.current) {
+            clearInterval(pollingRef.current);
         }
+        completedRef.current = false;
         fetchProgress();
-        const interval = setInterval(fetchProgress, 2000);
-        setPollingInterval(interval);
+        pollingRef.current = setInterval(fetchProgress, 3000);
     };
 
     const fetchProgress = async () => {
@@ -66,8 +67,15 @@ const BatchScoreModal = ({ visible, onClose, taskId, submissions, onSuccess }) =
             setProgress(res);
 
             if (res.status === 'completed' || res.status === 'completed_with_errors') {
-                clearInterval(pollingInterval);
-                setPollingInterval(null);
+                if (pollingRef.current) {
+                    clearInterval(pollingRef.current);
+                    pollingRef.current = null;
+                }
+                // 完成后通知父组件刷新列表并汇总（仅触发一次）
+                if (!completedRef.current) {
+                    completedRef.current = true;
+                    onComplete?.(res);
+                }
                 // 延迟关闭进度显示
                 setTimeout(() => {
                     setProgressVisible(false);
@@ -80,9 +88,9 @@ const BatchScoreModal = ({ visible, onClose, taskId, submissions, onSuccess }) =
     };
 
     const handleCancel = () => {
-        if (pollingInterval) {
-            clearInterval(pollingInterval);
-            setPollingInterval(null);
+        if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
         }
         setProgressVisible(false);
         setProgress(null);
@@ -170,14 +178,14 @@ const BatchScoreModal = ({ visible, onClose, taskId, submissions, onSuccess }) =
 
                 {/* 统计信息 */}
                 <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-                    <Col span={6}>
+                    <Col xs={12} sm={6}>
                         <Statistic
                             title="总数"
                             value={progress.total}
                             valueStyle={{ fontSize: 20 }}
                         />
                     </Col>
-                    <Col span={6}>
+                    <Col xs={12} sm={6}>
                         <Statistic
                             title="成功"
                             value={progress.success || 0}
@@ -185,7 +193,7 @@ const BatchScoreModal = ({ visible, onClose, taskId, submissions, onSuccess }) =
                             prefix={<CheckCircleOutlined />}
                         />
                     </Col>
-                    <Col span={6}>
+                    <Col xs={12} sm={6}>
                         <Statistic
                             title="失败"
                             value={progress.failed || 0}
@@ -193,7 +201,7 @@ const BatchScoreModal = ({ visible, onClose, taskId, submissions, onSuccess }) =
                             prefix={<CloseCircleOutlined />}
                         />
                     </Col>
-                    <Col span={6}>
+                    <Col xs={12} sm={6}>
                         <Statistic
                             title="跳过"
                             value={progress.skipped || 0}
@@ -335,7 +343,7 @@ const BatchScoreModal = ({ visible, onClose, taskId, submissions, onSuccess }) =
                         {totalPending > 0 ? `确认评分 (${totalPending}人)` : '无待评分提交'}
                     </Button>
                 ]}
-                width={650}
+                width="min(650px, 95vw)"
             >
                 {renderConfirm()}
             </Modal>
@@ -350,7 +358,7 @@ const BatchScoreModal = ({ visible, onClose, taskId, submissions, onSuccess }) =
                         {progress?.status === 'completed' || progress?.status === 'completed_with_errors' ? '关闭' : '后台运行'}
                     </Button>
                 ]}
-                width={700}
+                width="min(700px, 95vw)"
                 closable={progress?.status === 'completed' || progress?.status === 'completed_with_errors'}
             >
                 {renderProgress()}

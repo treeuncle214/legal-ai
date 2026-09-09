@@ -8,7 +8,7 @@ export const SummaryStats = ({ stats }) => {
 
     return (
         <Row gutter={16}>
-            <Col span={6}>
+            <Col xs={12} md={6}>
                 <Card>
                     <Statistic
                         title="总提交次数"
@@ -17,7 +17,7 @@ export const SummaryStats = ({ stats }) => {
                     />
                 </Card>
             </Col>
-            <Col span={6}>
+            <Col xs={12} md={6}>
                 <Card>
                     <Statistic
                         title="课堂练习"
@@ -26,7 +26,7 @@ export const SummaryStats = ({ stats }) => {
                     />
                 </Card>
             </Col>
-            <Col span={6}>
+            <Col xs={12} md={6}>
                 <Card>
                     <Statistic
                         title="任务实践"
@@ -35,7 +35,7 @@ export const SummaryStats = ({ stats }) => {
                     />
                 </Card>
             </Col>
-            <Col span={6}>
+            <Col xs={12} md={6}>
                 <Card>
                     <Statistic
                         title="综合考察"

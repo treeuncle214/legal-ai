@@ -13,12 +13,13 @@ from backend.api.scores.helpers import get_level
 def create_sheet1(ws, students, tasks, all_scores, student_names, task_info):
     """Sheet 1: 任务总览"""
     # ✅ 添加学院和专业列
+    task_weight_map = {task.id: task.weight or 0 for task in tasks}
     headers = ["学号", "姓名", "学院", "专业"]
     task_ids = []
     for task in tasks:
         headers.append(f"{task.title}")
         task_ids.append(task.id)
-    headers.append("平均分")
+    headers.append("加权总分")
     headers.append("等级")
     
     header_font = Font(bold=True, color="FFFFFF")
@@ -47,27 +48,31 @@ def create_sheet1(ws, students, tasks, all_scores, student_names, task_info):
         ws.cell(row=row_num, column=4, value=major or "-")
         
         col = 5  # 从第5列开始是任务成绩
-        total_sum = 0
-        valid_count = 0
-        
+        has_score = False
+        total_weighted = 0.0
+        total_weight = 0.0
+
         for task in tasks:
             score_data = all_scores.get(username, {}).get(task.id)
             if score_data:
                 score = score_data["total"]
                 ws.cell(row=row_num, column=col, value=score)
-                total_sum += score
-                valid_count += 1
                 student_scores[username].append(score)
+                has_score = True
+                weight = task_weight_map.get(task.id, 0) or 0
+                if score > 0 and weight > 0:
+                    total_weighted += score * weight
+                    total_weight += weight
             else:
                 ws.cell(row=row_num, column=col, value="-")
             col += 1
-        
-        avg_score = round(total_sum / valid_count, 2) if valid_count > 0 else 0
-        level = get_level(avg_score) if valid_count > 0 else "未提交"
-        
+
+        avg_score = round(total_weighted / total_weight, 2) if total_weight > 0 else 0
+        level = get_level(avg_score) if has_score else "未提交"
+
         ws.cell(row=row_num, column=col, value=avg_score)
         ws.cell(row=row_num, column=col + 1, value=level)
-        
+
         row_num += 1
     
     if row_num > 2:

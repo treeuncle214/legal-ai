@@ -119,6 +119,7 @@ export default function StudentTasks() {
             rowKey="id"
             loading={loading}
             pagination={{ pageSize: 10 }}
+            scroll={{ x: 'max-content' }}
             expandable={{
                 expandedRowRender: (record) => (
                     <div style={{

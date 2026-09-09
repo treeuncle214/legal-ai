@@ -157,7 +157,7 @@ export default function TeacherScores() {
     
     
     const handleStudentClick = (username) => {
-        navigate(`/teacher/student-profile?username=${username}`);
+        navigate(`/teacher/profile?username=${username}`);
     };
 
     // --- 渲染：等级分布饼图 ---
@@ -426,9 +426,9 @@ export default function TeacherScores() {
                 }
             })),
             {
-                title: '平均分',
-                dataIndex: 'average_score',
-                key: 'average_score',
+                title: '加权总分',
+                dataIndex: 'weighted_score',
+                key: 'weighted_score',
                 width: 90,
                 align: 'center',
                 render: (score) => (
@@ -470,32 +470,32 @@ export default function TeacherScores() {
         const dist = analyticsData.level_distribution || {};
         return (
             <Row gutter={16} style={{ marginBottom: 16 }}>
-                <Col span={4}>
+                <Col xs={12} sm={8} md={4}>
                     <Card>
                         <Statistic title="学生总数" value={analyticsData.total_students || 0} />
                     </Card>
                 </Col>
-                <Col span={4}>
+                <Col xs={12} sm={8} md={4}>
                     <Card>
                         <Statistic title="任务总数" value={analyticsData.total_tasks || 0} />
                     </Card>
                 </Col>
-                <Col span={4}>
+                <Col xs={12} sm={8} md={4}>
                     <Card style={{ borderLeft: '4px solid #52c41a' }}>
                         <Statistic title="优秀" value={dist.优秀 || 0} />
                     </Card>
                 </Col>
-                <Col span={4}>
+                <Col xs={12} sm={8} md={4}>
                     <Card style={{ borderLeft: '4px solid #1890ff' }}>
                         <Statistic title="良好" value={dist.良好 || 0} />
                     </Card>
                 </Col>
-                <Col span={4}>
+                <Col xs={12} sm={8} md={4}>
                     <Card style={{ borderLeft: '4px solid #faad14' }}>
                         <Statistic title="合格" value={dist.合格 || 0} />
                     </Card>
                 </Col>
-                <Col span={4}>
+                <Col xs={12} sm={8} md={4}>
                     <Card style={{ borderLeft: '4px solid #ff4d4f' }}>
                         <Statistic title="不合格/未提交" value={(dist.不合格 || 0) + (dist.未提交 || 0)} />
                     </Card>
@@ -509,7 +509,7 @@ export default function TeacherScores() {
             {/* 筛选栏 */}
             <Card style={{ marginBottom: 16 }}>
                 <Row gutter={16} align="middle">
-                    <Col span={6}>
+                    <Col xs={24} sm={12}>
                         <Select
                             style={{ width: '100%' }}
                             placeholder="选择班级"
@@ -521,7 +521,7 @@ export default function TeacherScores() {
                             ))}
                         </Select>
                     </Col>
-                    <Col span={6}>
+                    <Col xs={24} sm={12}>
                         <Select
                             style={{ width: '100%' }}
                             value={selectedTaskType}
@@ -533,7 +533,7 @@ export default function TeacherScores() {
                             <Option value="综合考察">综合考察</Option>
                         </Select>
                     </Col>
-                    <Col span={12}>
+                    <Col xs={24} md={12}>
                         <Space style={{ float: 'right' }}>
                             <Button icon={<ReloadOutlined />} onClick={() => fetchAnalytics(selectedClassId, selectedTaskType)}>
                                 刷新
@@ -572,12 +572,12 @@ export default function TeacherScores() {
                         {/* Tab 2: 班级学情 */}
                         <TabPane tab={<span><LineChartOutlined />班级学情</span>} key="analytics">
                             <Row gutter={16}>
-                                <Col span={12}>
+                                <Col xs={24} md={12}>
                                     <Card title="等级分布" style={{ marginBottom: 16 }}>
                                         {renderLevelChart()}
                                     </Card>
                                 </Col>
-                                <Col span={12}>
+                                <Col xs={24} md={12}>
                                     <Card title="各维度平均分" style={{ marginBottom: 16 }}>
                                         {renderDimensionChart()}
                                     </Card>

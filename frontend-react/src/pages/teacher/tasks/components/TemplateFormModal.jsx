@@ -33,7 +33,7 @@ export function TemplateFormModal({
             open={open}
             onOk={isViewMode ? onCancel : onSave}
             onCancel={onCancel}
-            width={950}
+            width="min(950px, 95vw)"
             okText={isViewMode ? '关闭' : '保存模板'}
             cancelText="取消"
             footer={
@@ -48,12 +48,12 @@ export function TemplateFormModal({
         >
             <Form form={templateForm} layout="vertical" disabled={isViewMode}>
                 <Row gutter={16}>
-                    <Col span={12}>
+                    <Col xs={24} sm={12}>
                         <Form.Item name="name" label="模板名称" rules={[{ required: true }]}>
                             <Input placeholder="例：法律法规检索评分模板" />
                         </Form.Item>
                     </Col>
-                    <Col span={12}>
+                    <Col xs={24} sm={12}>
                         <Form.Item name="task_type" label="适用任务类型">
                             <Select placeholder="不限" allowClear>
                                 <Option value="课堂练习">课堂练习</Option>
@@ -111,10 +111,10 @@ export function TemplateFormModal({
                     </Row>
                 </div>
 
-                <div style={{ display: 'flex', gap: 16 }}>
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                     {/* 左侧：可选指标 */}
                     <div style={{
-                        flex: 1,
+                        flex: '1 1 300px',
                         maxHeight: 350,
                         overflow: 'auto',
                         border: '1px solid #d9d9d9',
@@ -164,7 +164,7 @@ export function TemplateFormModal({
 
                     {/* 右侧：已选指标 */}
                     <div style={{
-                        flex: 1,
+                        flex: '1 1 300px',
                         maxHeight: 350,
                         overflow: 'auto',
                         border: '1px solid #d9d9d9',

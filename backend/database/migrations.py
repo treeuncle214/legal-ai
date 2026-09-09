@@ -100,6 +100,20 @@ def ensure_submission_columns():
     _add_column("submissions", "resubmit_count", "INTEGER", "0")
 
 
+def ensure_batch_progress_table():
+    """确保批量评分进度表存在（跨 worker 共享进度）"""
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS batch_progress (
+                task_id INTEGER PRIMARY KEY,
+                progress_data TEXT,
+                updated_at TEXT
+            )
+        """))
+        conn.commit()
+    print("✅ batch_progress 表已就绪")
+
+
 def migrate_old_score_columns():
     """将旧的5维度评分数据迁移到新4维度"""
     inspector = inspect(engine)
@@ -176,7 +190,8 @@ def init_db():
     ensure_user_columns()
     ensure_task_columns()
     ensure_submission_columns()
-    
+    ensure_batch_progress_table()
+
     # 迁移旧数据
     migrate_old_score_columns()
 

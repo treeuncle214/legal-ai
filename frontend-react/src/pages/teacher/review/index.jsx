@@ -55,6 +55,20 @@ export default function TeacherReview() {
         }
     };
 
+    const handleBatchComplete = (progress) => {
+        if (selectedTaskId) {
+            fetchSubmissions(selectedTaskId);
+        }
+        const success = progress?.success || 0;
+        const failed = progress?.failed || 0;
+        const skipped = progress?.skipped || 0;
+        if (failed > 0) {
+            message.warning(`批量评分完成：成功 ${success} 人，失败 ${failed} 人，跳过 ${skipped} 人`);
+        } else {
+            message.success(`批量评分完成：成功 ${success} 人，跳过 ${skipped} 人`);
+        }
+    };
+
     const getPendingCount = () => {
         return submissions.filter(s =>
             !s.ai_scored &&
@@ -120,6 +134,7 @@ export default function TeacherReview() {
                 taskId={selectedTaskId}
                 submissions={submissions}
                 onSuccess={handleBatchScoreSuccess}
+                onComplete={handleBatchComplete}
             />
         </div>
     );

@@ -154,7 +154,7 @@ export const IndicatorScores = ({
     if (isReviewed && !isPending) {
         // 查看模式
         return (
-            <Descriptions column={2} bordered size="small">
+            <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
                 {dimensions.map(dim => {
                     const indicators = dim.sub_indicators || [];
                     if (indicators.length === 0) return null;
@@ -186,7 +186,7 @@ export const IndicatorScores = ({
             <div style={{ marginBottom: 12, color: '#999', fontSize: 13 }}>
                 <Tag color="warning">✏️ 修改二级指标分数后，系统将自动重新计算维度得分和作业总分</Tag>
             </div>
-            <Descriptions column={2} bordered size="small">
+            <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
                 {dimensions.map(dim => {
                     const indicators = dim.sub_indicators || [];
                     if (indicators.length === 0) return null;

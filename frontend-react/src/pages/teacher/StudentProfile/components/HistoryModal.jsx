@@ -47,7 +47,7 @@ export const HistoryModal = ({ open, onClose, username, displayName, data, loadi
             title={`${displayName || username} 的提交记录`}
             open={open}
             onCancel={onClose}
-            width={1000}
+            width="min(1000px, 95vw)"
             footer={null}
             destroyOnClose
         >
@@ -57,6 +57,7 @@ export const HistoryModal = ({ open, onClose, username, displayName, data, loadi
                 rowKey="id"
                 pagination={{ pageSize: 10 }}
                 locale={{ emptyText: '暂无提交记录' }}
+                scroll={{ x: 'max-content' }}
                 size="middle"
                 loading={loading}
             />

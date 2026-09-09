@@ -30,7 +30,7 @@ export const ReviewToolbar = ({
         <div style={{ marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 'bold' }}>选择班级：</span>
             <Select
-                style={{ width: 200 }}
+                style={{ width: '100%', maxWidth: 200 }}
                 value={selectedClassId}
                 onChange={(value) => {
                     setSelectedClassId(value);
@@ -46,7 +46,7 @@ export const ReviewToolbar = ({
 
             <span style={{ fontWeight: 'bold' }}>选择任务：</span>
             <Select
-                style={{ width: 250 }}
+                style={{ width: '100%', maxWidth: 250 }}
                 value={selectedTaskId}
                 onChange={setSelectedTaskId}
                 placeholder="请选择任务"

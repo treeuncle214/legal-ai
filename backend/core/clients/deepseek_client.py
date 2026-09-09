@@ -37,7 +37,7 @@ except Exception as e:
 def call_deepseek_api(
     prompt: str, 
     max_retries: int = 3, 
-    temperature: float = 0.7,
+    temperature: float = 0.2,
     max_tokens: int = 8192  # ✅ 从4096增加到8192
 ) -> Optional[str]:
     """

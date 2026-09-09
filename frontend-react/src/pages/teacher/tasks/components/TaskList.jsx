@@ -57,6 +57,6 @@ export function TaskList({ tasks, loading, classes, onEdit, onDelete }) {
     ];
 
     return (
-        <Table columns={columns} dataSource={tasks} rowKey="id" loading={loading} />
+        <Table columns={columns} dataSource={tasks} rowKey="id" loading={loading} scroll={{ x: 'max-content' }} />
     );
 }

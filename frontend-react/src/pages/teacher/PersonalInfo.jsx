@@ -121,7 +121,7 @@ export default function TeacherPersonalInfo() {
                     </Button>
                 }
             >
-                <Descriptions column={2} bordered>
+                <Descriptions column={{ xs: 1, sm: 2 }} bordered>
                     <Descriptions.Item label="工号">{user.username}</Descriptions.Item>
                     <Descriptions.Item label="姓名">{user.display_name || user.username}</Descriptions.Item>
                     <Descriptions.Item label="角色">{user.role === 'admin' ? '管理员' : '教师'}</Descriptions.Item>

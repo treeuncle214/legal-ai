@@ -101,7 +101,7 @@ export function ShareTemplateModal({
             confirmLoading={loading}
             okText="确认共享"
             cancelText="取消"
-            width={520}
+            width="min(520px, 95vw)"
         >
             <div style={{ marginBottom: 16 }}>
                 <p style={{ marginBottom: 8, fontWeight: 500 }}>

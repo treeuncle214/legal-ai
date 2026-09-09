@@ -11,7 +11,7 @@ export const StudentHeader = ({ profile, overallLevel, overallScore }) => {
     return (
         <Card style={{ marginBottom: 16, background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)' }}>
             <Row align="middle">
-                <Col span={16}>
+                <Col xs={24}>
                     <div style={{ fontSize: 24, fontWeight: 'bold' }}>
                         {profile.display_name || profile.username}
                     </div>
@@ -37,7 +37,7 @@ export const StudentHeader = ({ profile, overallLevel, overallScore }) => {
                         </div>
                     </div>
                 </Col>
-                <Col span={8} style={{ textAlign: 'right' }}>
+                <Col xs={24} style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: 14, color: '#666' }}>综合得分</div>
                     <div style={{ fontSize: 36, fontWeight: 'bold', color: levelColor }}>
                         {overallScore}分

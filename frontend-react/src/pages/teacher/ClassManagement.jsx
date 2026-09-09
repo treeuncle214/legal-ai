@@ -390,6 +390,7 @@ export default function ClassManagement() {
                             loading={loading}
                             pagination={{ pageSize: 20 }}
                             locale={{ emptyText: '暂无用户' }}
+                            scroll={{ x: 'max-content' }}
                         />
                     </TabPane>
                     <TabPane tab="📚 班级管理" key="classes">
@@ -416,6 +417,7 @@ export default function ClassManagement() {
                             loading={loading}
                             pagination={{ pageSize: 10 }}
                             locale={{ emptyText: '暂无班级，请创建班级' }}
+                            scroll={{ x: 'max-content' }}
                         />
                     </TabPane>
                 </Tabs>
@@ -521,7 +523,7 @@ export default function ClassManagement() {
                         resetImport();
                     }}
                     footer={null}
-                    width={700}
+                    width="min(700px, 95vw)"
                 >
                     <div style={{ marginBottom: 16 }}>
                         <Alert
@@ -592,7 +594,7 @@ export default function ClassManagement() {
 
                     {importResult && (
                         <div style={{ marginBottom: 16, padding: 12, background: '#f5f5f5', borderRadius: 4 }}>
-                            <div style={{ display: 'flex', gap: 24, marginBottom: 8 }}>
+                            <div style={{ display: 'flex', gap: 24, marginBottom: 8, flexWrap: 'wrap' }}>
                                 <span>
                                     <CheckCircleOutlined style={{ color: '#52c41a' }} />
                                     成功: <strong>{importResult.success_count || 0}</strong> 条
@@ -663,6 +665,7 @@ export default function ClassManagement() {
                 loading={loading}
                 pagination={{ pageSize: 10 }}
                 locale={{ emptyText: '暂无班级，请创建班级' }}
+                scroll={{ x: 'max-content' }}
             />
 
             {/* 创建班级模态框（普通教师） */}
@@ -766,7 +769,7 @@ export default function ClassManagement() {
 
                 {importResult && (
                     <div style={{ marginBottom: 16, padding: 12, background: '#f5f5f5', borderRadius: 4 }}>
-                        <div style={{ display: 'flex', gap: 24, marginBottom: 8 }}>
+                        <div style={{ display: 'flex', gap: 24, marginBottom: 8, flexWrap: 'wrap' }}>
                             <span>
                                 <CheckCircleOutlined style={{ color: '#52c41a' }} />
                                 成功: <strong>{importResult.success_count || 0}</strong> 条

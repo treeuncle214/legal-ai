@@ -12,6 +12,20 @@ from backend.config import SCORING_DIMENSIONS
 from backend.api.scores.helpers import get_level, get_indicator_max_score
 
 
+def _weighted_total(scores: list, task_weight_map: dict) -> float:
+    """加权总分 = Σ(得分 × 权重) / Σ(权重)，与学生画像「综合得分」同口径"""
+    total_weighted = 0.0
+    total_weight = 0.0
+    for s in scores:
+        weight = task_weight_map.get(s["task_id"], 0) or 0
+        score = s.get("total_score", 0) or 0
+        if score <= 0 or weight <= 0:
+            continue
+        total_weighted += score * weight
+        total_weight += weight
+    return round(total_weighted / total_weight, 2) if total_weight > 0 else 0
+
+
 def get_class_analytics_data(
     class_id: int,
     task_type: Optional[str],
@@ -54,7 +68,10 @@ def get_class_analytics_data(
     if task_type:
         tasks = tasks.filter(Task.task_type == task_type)
     tasks = tasks.order_by(Task.created_at).all()
-    
+
+    # 任务权重映射（用于加权总分）
+    task_weight_map = {t.id: t.weight or 0 for t in tasks}
+
     if not tasks:
         return {
             "class_id": class_id,
@@ -163,8 +180,8 @@ def get_class_analytics_data(
         if not student_scores:
             level_distribution["未提交"] += 1
             continue
-        avg_score = sum([s["total_score"] for s in student_scores]) / len(student_scores)
-        level = get_level(avg_score)
+        weighted_score = _weighted_total(student_scores, task_weight_map)
+        level = get_level(weighted_score)
         level_distribution[level] = level_distribution.get(level, 0) + 1
     
     # 8. 任务趋势
@@ -193,15 +210,15 @@ def get_class_analytics_data(
         student = db.query(User).filter(User.username == student_username).first()
         scores = student_score_map.get(student_username, [])
         if scores:
-            avg_score = sum([s["total_score"] for s in scores]) / len(scores)
-            level = get_level(avg_score)
+            weighted_score = _weighted_total(scores, task_weight_map)
+            level = get_level(weighted_score)
         else:
-            avg_score = 0
+            weighted_score = 0
             level = "未提交"
         student_details.append({
             "username": student_username,
             "display_name": student.display_name if student else student_username,
-            "average_score": round(avg_score, 2),
+            "weighted_score": round(weighted_score, 2),
             "level": level,
             "submission_count": len(scores),
             "scores": scores

@@ -143,7 +143,7 @@ export default function StudentPersonalInfo() {
                     </Button>
                 }
             >
-                <Descriptions column={2} bordered>
+                <Descriptions column={{ xs: 1, sm: 2 }} bordered>
                     <Descriptions.Item label="学号">{user.username}</Descriptions.Item>
                     <Descriptions.Item label="姓名">{user.display_name || user.username}</Descriptions.Item>
                     <Descriptions.Item label="班级">{classInfo?.class_name || '未分配班级'}</Descriptions.Item>

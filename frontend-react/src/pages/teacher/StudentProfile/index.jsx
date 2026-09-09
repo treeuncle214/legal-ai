@@ -1,9 +1,9 @@
 // frontend-react/src/pages/teacher/StudentProfile/index.jsx
 
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Card, Input, Button, Spin, Empty, message, Tabs, Row, Col } from 'antd';
-import { SearchOutlined, HistoryOutlined } from '@ant-design/icons';
+import { SearchOutlined, HistoryOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 
 import { useStudentProfile } from './hooks/useStudentProfile';
 import { StudentHeader } from './components/StudentHeader';
@@ -18,6 +18,7 @@ const { TabPane } = Tabs;
 
 export default function TeacherStudentProfile() {
     const [searchParams] = useSearchParams();
+    const navigate = useNavigate();
     const initialUsername = searchParams.get('username') || '';
 
     const {
@@ -53,12 +54,15 @@ export default function TeacherStudentProfile() {
             {/* 搜索栏 */}
             <Card style={{ marginBottom: 16 }}>
                 <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <Button icon={<ArrowLeftOutlined />} size="large" onClick={() => navigate('/teacher/scores')}>
+                        返回成绩总览
+                    </Button>
                     <Input
                         placeholder="请输入学生学号"
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
                         onPressEnter={() => handleSearch()}
-                        style={{ width: 250 }}
+                        style={{ width: '100%', maxWidth: 250 }}
                         size="large"
                         prefix={<SearchOutlined />}
                     />

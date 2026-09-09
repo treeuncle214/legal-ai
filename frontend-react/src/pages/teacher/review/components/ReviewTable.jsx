@@ -185,6 +185,7 @@ export const ReviewTable = ({
             loading={loading}
             pagination={{ pageSize: 20 }}
             locale={{ emptyText: '该任务暂无提交记录' }}
+            scroll={{ x: 'max-content' }}
         />
     );
 };

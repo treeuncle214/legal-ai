@@ -394,7 +394,7 @@ export function TaskFormModal({
             open={open}
             onOk={handleOk}
             onCancel={onCancel}
-            width={850}
+            width="min(850px, 95vw)"
             okText="确定"
             cancelText="取消"
         >

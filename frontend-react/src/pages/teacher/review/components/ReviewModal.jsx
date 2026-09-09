@@ -240,7 +240,7 @@ export const ReviewModal = ({
     );
 
     const renderStudentInfo = (statusTag) => (
-        <Descriptions column={2} bordered size="small" style={{ marginBottom: 16 }}>
+        <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small" style={{ marginBottom: 16 }}>
             <Descriptions.Item label="学号">{submission.student_username}</Descriptions.Item>
             <Descriptions.Item label="姓名">
                 {submission.student_name || submission.student_username}
@@ -272,7 +272,7 @@ export const ReviewModal = ({
                 title="查看提交（已发布）"
                 open={visible}
                 onCancel={onClose}
-                width={950}
+                width="min(950px, 95vw)"
                 footer={
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                         <Popconfirm
@@ -302,7 +302,7 @@ export const ReviewModal = ({
                 title="查看提交（已批改）"
                 open={visible}
                 onCancel={onClose}
-                width={950}
+                width="min(950px, 95vw)"
                 footer={
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                         <Button onClick={onClose}>关闭</Button>

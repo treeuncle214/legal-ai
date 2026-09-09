@@ -55,7 +55,7 @@ export default function TeacherLogin({ onLoginSuccess }) {
             alignItems: 'center',
             background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
         }}>
-            <Card style={{ width: 400, boxShadow: '0 8px 24px rgba(0,0,0,0.3)' }}>
+            <Card style={{ maxWidth: 400, width: '100%', margin: '0 16px', boxShadow: '0 8px 24px rgba(0,0,0,0.3)' }}>
                 <div style={{ textAlign: 'center', marginBottom: 32 }}>
                     <Title level={2} style={{ margin: 0 }}>📚 法律信息智能检索</Title>
                     <p style={{ color: '#666', marginTop: 8 }}>教师端 - AI能力测评系统</p>

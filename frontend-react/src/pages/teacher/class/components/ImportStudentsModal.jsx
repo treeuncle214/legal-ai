@@ -75,7 +75,7 @@ export function ImportStudentsModal({
             open={open}
             onCancel={handleCancel}
             footer={null}
-            width={700}
+            width="min(700px, 95vw)"
         >
             <Alert
                 message="导入说明"

@@ -123,7 +123,7 @@ export function ClassTeacherModal({ open, classInfo, onCancel, onSuccess }) {
             open={open}
             onCancel={onCancel}
             footer={null}
-            width={600}
+            width="min(600px, 95vw)"
         >
             <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
                 <Select

@@ -238,6 +238,14 @@ export const useReview = () => {
         }
     }, [selectedTaskId]);
 
+    // ✅ 状态驱动轮询：存在「AI评分中」的提交时，每 3 秒刷新一次，评分完成后自动停止
+    useEffect(() => {
+        const hasScoring = submissions.some(s => s.ai_score_status === 'scoring');
+        if (!hasScoring || !selectedTaskId) return;
+        const timer = setTimeout(() => fetchSubmissions(selectedTaskId), 3000);
+        return () => clearTimeout(timer);
+    }, [submissions, selectedTaskId, fetchSubmissions]);
+
     return {
         tasks,
         classes,

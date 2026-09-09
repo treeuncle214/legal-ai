@@ -68,6 +68,7 @@ export function ClassList({ data, loading, onDelete, onManageTeachers }) {
             rowKey="id"
             loading={loading}
             pagination={{ pageSize: 10 }}
+            scroll={{ x: 'max-content' }}
             locale={{ emptyText: '暂无班级，请创建班级' }}
         />
     );

@@ -24,11 +24,15 @@ def build_exercise_prompt(
     task_description = task.get("description", "").strip() or "无具体描述"
     task_type = task.get("task_type", "任务实践")
     
+    # ✅ 关键修复：获取模板的作业级提示词（教师评分标准）
+    rubric_config = task.get("rubric_config") or {}
+    teacher_overall_prompt = rubric_config.get("overall_prompt", "").strip()
+    
     # 将任务描述中的换行符保留
     description_lines = task_description.split('\n')
     formatted_description = '\n'.join([f"  {line}" if line.strip() else "" for line in description_lines])
     
-    # 获取提交内容（word 提交的正文在 word_content，作为最终输出）
+    # 获取提交内容
     process_log = submission.get("process_log", "无记录")
     ai_interaction_log = submission.get("ai_interaction_log", "无记录")
     final_output = submission.get("final_output", "无内容")
@@ -40,10 +44,10 @@ def build_exercise_prompt(
     for key in enabled_indicators:
         name = INDICATOR_NAMES.get(key, key)
         max_score = indicator_max_scores.get(key, 10) if indicator_max_scores else 10
-        prompt = ""
+        prompt_text = ""
         if indicator_prompts and key in indicator_prompts:
-            prompt = f"\n   评分关注点：{indicator_prompts[key]}"
-        indicator_list.append(f"  - {key} {name}（满分 {max_score} 分，请按百分制返回 0-100 分）{prompt}")
+            prompt_text = f"\n   评分关注点：{indicator_prompts[key]}"
+        indicator_list.append(f"  - {key} {name}（满分 {max_score} 分，请按百分制返回 0-100 分）{prompt_text}")
     
     indicators_text = "\n".join(indicator_list) if indicator_list else "  全部13个指标"
     
@@ -51,16 +55,37 @@ def build_exercise_prompt(
     doc1_text = ", ".join([f"{k}({INDICATOR_NAMES.get(k, k)})" for k in DOC1_INDICATORS if k in enabled_indicators])
     doc2_text = ", ".join([f"{k}({INDICATOR_NAMES.get(k, k)})" for k in DOC2_INDICATORS if k in enabled_indicators])
     
+    # ✅ 构建教师评分标准部分（优先显示）
+    teacher_prompt_section = ""
+    if teacher_overall_prompt:
+        teacher_prompt_section = f"""
+## ⚠️ 教师评分标准（最高优先级，必须严格遵守）
+
+{teacher_overall_prompt}
+
+**注意：上述教师评分标准优先于下方所有参考标准。评分时必须严格按照教师要求执行，不得偏离。**
+"""
+    else:
+        teacher_prompt_section = """
+## ⚠️ 教师评分标准
+
+请按照专业法律信息检索课程评分标准，公平公正地评分。
+"""
+    
     prompt = f"""你是一位专业的法律信息检索课程评分教师。请根据以下评分标准，对学生提交的内容进行逐项评分。
 
-## 评分规则（重要）
-1. **每个指标必须给出0-100的百分制分数**（不要只给等级；后端会按该指标满分自动折算，如满分14分时 50分→7.0分）
-2. **分数要有区分度**，不要集中在60分附近，要根据实际表现拉开差距
-3. **每个指标必须给出具体评语**，指出优点和不足
-4. 评语要个性化、有针对性，不要使用模板化语言
-5. **必须结合任务描述中的具体要求进行评分**，不能脱离任务背景
+{teacher_prompt_section}
 
-## 评分标准
+## 评分规则（重要）
+1. **必须首先遵守教师评分标准**（如有）。教师要求"宽松"则整体提高分数，要求"严格"则整体降低分数
+2. **每个指标必须给出0-100的百分制分数**（不要只给等级；后端会按该指标满分自动折算）
+3. **分数要有区分度**，不要集中在60分附近，要根据实际表现拉开差距
+4. **每个指标必须给出具体评语**，指出优点和不足
+5. 评语要个性化、有针对性，不要使用模板化语言
+6. **必须结合任务描述中的具体要求进行评分**，不能脱离任务背景
+7. **评分一致性**：相同质量的作业应获得相近分数（偏差不超过5分）
+
+## 参考评分区间（仅供参考，教师评分标准优先）
 - 优秀(85-100)：表现突出，超出基本要求
 - 良好(75-84)：符合基本要求，有亮点
 - 合格(55-74)：基本达标，有改进空间  
